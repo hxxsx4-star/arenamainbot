@@ -202,7 +202,7 @@ class EconomyCog(commands.Cog):
         embed = discord.Embed(title="🏆 서버 포인트 랭킹 (상위 10명)", description="\n".join(lines), color=discord.Color.blue())
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="지급", description="[관리자] 특정 유저에게 포인트를 지급합니다.")
+    @app_commands.command(name="포인트지급", description="[관리자] 특정 유저에게 포인트를 지급합니다.")
     @app_commands.default_permissions(manage_guild=True)
     @app_commands.describe(유저="포인트를 받을 유저", 금액="지급할 포인트 양")
     async def grant_points(self, interaction: discord.Interaction, 유저: discord.Member, 금액: int):
@@ -218,7 +218,7 @@ class EconomyCog(commands.Cog):
         log_embed.add_field(name="금액", value=f"{format_num(금액)} {CURRENCY}", inline=False)
         await self._send_log(interaction.guild, GRANT_LOG_CHANNEL_ID, log_embed)
 
-    @app_commands.command(name="회수", description="[관리자] 특정 유저의 포인트를 회수합니다.")
+    @app_commands.command(name="포인트회수", description="[관리자] 특정 유저의 포인트를 회수합니다.")
     @app_commands.default_permissions(manage_guild=True)
     @app_commands.describe(유저="포인트를 회수할 유저", 금액="회수할 포인트 양")
     async def revoke_points(self, interaction: discord.Interaction, 유저: discord.Member, 금액: int):
