@@ -12,26 +12,18 @@ SHOP_LOG_CHANNEL_ID = SHOP_LOG_CH
 SHOP_DATA = {
     "lck": {
         "title": "🏆 LCK 역할 상점",
-        "description": "원하는 LCK 팀 역할을 7,000 Point에 구매하세요!",
-        "price": 7000,
+        "description": "원하는 LCK 팀 역할을 100,000 Point에 구매하세요!",
+        "price": 100000,
         "roles": {
-            "T1": 1520979707816841216, "GEN.G": 1520977760699289610, "HLE": 1520980357619646565,
-            "DK": 1520981012711215194, "KT": 1520981444497768558, "NS": 1520981862590451834,
-            "BFX": 1520984401486282793, "DNS": 1520982382063255592, "KRX": 1520979987417792562,
-            "BRO": 1520982168447488000
-        }
-    },
-    "lol_object": {
-        "title": "🐉 롤 오브젝트 역할 상점",
-        "description": "원하는 롤 오브젝트 역할을 5,000 Point에 구매하세요!",
-        "price": 5000,
-        "roles": {
-            "내셔남작": 1520986184766193705, "장로드래곤": 1520997233804312626, "바위 게": 1520996406322659448,
-            "빨간미니언": 1520996956347043943, "파란미니언": 1520986425389088788
+            "T1": 1527350364540506203, "GEN": 1527350507059023902, "HLE": 1527350533084418159,
+            "DK": 1527350558606758010, "KT": 1527350585962270880, "NS": 1527350612558348388,
+            "BFX": 1527350700315508986, "KRX": 1527350735820423188, "BRO": 1527351514031591594,
+            "DNS": 1527351551168090154
         }
     }
 }
-CUSTOM_ROLE_PRICE = 25000
+CUSTOM_ROLE_PRICE = 300000
+CUSTOM_ROLE_NOTIFY_USER = 1505506970361139210  # 커스텀 역할 구매 알림 받을 유저
 
 # ✨ 상점 로그를 전송하는 비동기 헬퍼 함수
 async def send_shop_log(interaction: discord.Interaction, item_name: str, price: int):
@@ -128,9 +120,13 @@ class CustomRoleConfirmView(discord.ui.View):
             await send_shop_log(interaction, "커스텀 역할", CUSTOM_ROLE_PRICE)
 
             try:
-                admin = interaction.client.get_user(697412465839046747) or await interaction.client.fetch_user(697412465839046747)
-                nickname = member.display_name
-                await admin.send(f"🔔 커스텀 역할 구매 알림\n서버 닉네임: {nickname}\n유저 멘션: {member.mention}\n\n위 유저가 방금 커스텀 역할을 구매했습니다!")
+                admin = interaction.client.get_user(CUSTOM_ROLE_NOTIFY_USER) or await interaction.client.fetch_user(CUSTOM_ROLE_NOTIFY_USER)
+                await admin.send(
+                    "🔔 커스텀 역할 구매 알림\n"
+                    f"서버 닉네임: {member.display_name}\n"
+                    f"유저 멘션: {member.mention}\n"
+                    f"유저 ID: `{member.id}`\n\n"
+                    "위 유저가 방금 커스텀 역할을 구매했습니다!")
             except Exception:
                 pass
 
@@ -152,12 +148,6 @@ class RoleCategoryView(discord.ui.View):
         data = SHOP_DATA["lck"]
         embed = discord.Embed(title=data["title"], description=data["description"], color=discord.Color.blue())
         await interaction.response.edit_message(embed=embed, view=DynamicShopView(self.cog, "lck"))
-
-    @discord.ui.button(label="롤 오브젝트 역할", style=discord.ButtonStyle.success)
-    async def lol_object_role_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        data = SHOP_DATA["lol_object"]
-        embed = discord.Embed(title=data["title"], description=data["description"], color=discord.Color.green())
-        await interaction.response.edit_message(embed=embed, view=DynamicShopView(self.cog, "lol_object"))
 
     @discord.ui.button(label="커스텀 역할", style=discord.ButtonStyle.secondary)
     async def custom_role_button(self, interaction: discord.Interaction, button: discord.ui.Button):

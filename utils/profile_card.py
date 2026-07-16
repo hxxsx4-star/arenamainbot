@@ -8,8 +8,9 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 from utils.stats import get_xp, get_voice_xp, get_points, get_rank, level_from_xp, xp_for_level
 
 # 배경/투명도 설정 (배경에 UI가 안 어울리면 이 값들을 조절하세요)
-PROFILE_BG_DIM = 110       # 배경 전체 어둡게 (0=원본, 255=완전 검정)
-PROFILE_PANEL_ALPHA = 180  # 패널 투명도 (0=투명, 255=불투명)
+PROFILE_BG_DIM = 70        # 배경 전체 어둡게 (0=원본, 255=완전 검정)
+PROFILE_PANEL_ALPHA = 120  # 패널 투명도 (0=투명, 255=불투명) — 낮을수록 배경이 잘 보임
+PANEL_BORDER = (170, 140, 235, 150)  # 패널 테두리 색 (부드러운 보라)
 TITLE_FONT = "font.ttf"    # 이름/레벨/포인트용 (나눔스퀘어라운드 Bold)
 UI_FONT = "font_ui.ttf"    # 라벨/작은글씨용 (나눔스퀘어라운드 Regular)
 
@@ -52,7 +53,7 @@ def generate_profile_image(avatar_bytes, name, chat_xp, voice_xp, points, chat_r
     panel = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     pd = ImageDraw.Draw(panel)
     pd.rounded_rectangle((26, 26, W - 26, H - 26), radius=34, fill=(16, 11, 36, PROFILE_PANEL_ALPHA))
-    pd.rounded_rectangle((26, 26, W - 26, H - 26), radius=34, outline=(255, 205, 90, 130), width=3)
+    pd.rounded_rectangle((26, 26, W - 26, H - 26), radius=34, outline=PANEL_BORDER, width=3)
     img = Image.alpha_composite(bg, panel)
     draw = ImageDraw.Draw(img)
 
