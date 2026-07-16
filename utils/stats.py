@@ -2,6 +2,7 @@ from typing import Optional
 import json
 import os
 import time
+import math
 import asyncio
 from filelock import FileLock
 from datetime import datetime, timedelta, timezone, date
@@ -139,15 +140,31 @@ async def reduce_warning(user_id: int, count: int) -> tuple[int, int]:
 # (모두 stats.json 에 저장 → 자동 백업 대상)
 # ==========================================
 
-def level_from_xp(xp: int) -> int:
-    """누적 XP → 레벨. (레벨 L 도달 필요 XP = L^2 * 100)"""
-    if xp < 0:
-        xp = 0
-    return int((xp / 100) ** 0.5)
+# 레벨 곡선: 0레벨 시작, 각 레벨업에 필요한 XP는 600부터 매 레벨 1.05배씩 증가.
+#   레벨 n→n+1 필요 XP = 600 * 1.05^n
+#   레벨 L 도달 누적 XP = 600 * (1.05^L - 1) / 0.05
+LEVEL_BASE = 600
+LEVEL_GROWTH = 1.05
 
 
 def xp_for_level(level: int) -> int:
-    return (level ** 2) * 100
+    """해당 레벨에 '도달'하기 위한 누적 XP. (레벨 0 = 0)"""
+    if level <= 0:
+        return 0
+    return int(round(LEVEL_BASE * (LEVEL_GROWTH ** level - 1) / (LEVEL_GROWTH - 1)))
+
+
+def level_from_xp(xp: int) -> int:
+    """누적 XP → 레벨 (0부터)."""
+    if xp < LEVEL_BASE:
+        return 0
+    val = 1 + xp * (LEVEL_GROWTH - 1) / LEVEL_BASE
+    lvl = int(math.log(val) / math.log(LEVEL_GROWTH))
+    while xp_for_level(lvl + 1) <= xp:
+        lvl += 1
+    while lvl > 0 and xp_for_level(lvl) > xp:
+        lvl -= 1
+    return lvl
 
 
 async def get_xp(user_id: int) -> int:
