@@ -6,12 +6,10 @@ from datetime import datetime, timezone, timedelta
 from discord.utils import format_dt
 
 import io
-import re
 import asyncio
-import aiohttp
-from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-from utils.stats import load_stats, format_num, get_points, add_points, spend_points, process_attendance, record_streak, bump_mission, get_xp, get_voice_xp, level_from_xp
+from utils.stats import load_stats, format_num, get_points, add_points, spend_points, process_attendance, record_streak, bump_mission, reset_all_data
+from utils.profile_card import build_profile_card
 from utils.logs import POINT_GIVE_LOG_CH, POINT_TAKE_LOG_CH, enqueue_embed
 
 GRANT_LOG_CHANNEL_ID = POINT_GIVE_LOG_CH
@@ -20,109 +18,6 @@ REVOKE_LOG_CHANNEL_ID = POINT_TAKE_LOG_CH
 CURRENCY, DAILY_REWARD, ATTEND_KEY = "P", 50, "출석_최근"
 try: KST = timezone(timedelta(hours=9), 'KST')
 except: KST = timezone(timedelta(hours=9))
-
-# 프로필 카드 배경/투명도 설정 (배경에 UI가 안 어울리면 이 값들을 조절하세요)
-PROFILE_BG_DIM = 110       # 배경 전체 어둡게 (0=원본, 255=완전 검정)
-PROFILE_PANEL_ALPHA = 180  # 패널 투명도 (0=투명, 255=불투명)
-TITLE_FONT = "font.ttf"    # 이름/레벨/포인트용 (나눔스퀘어라운드 Bold)
-UI_FONT = "font_ui.ttf"    # 라벨/작은글씨용 (나눔스퀘어라운드 Regular)
-
-
-def _font(path, size):
-    try:
-        return ImageFont.truetype(path, size)
-    except OSError:
-        return ImageFont.load_default()
-
-
-def _fit_font(draw, text, path, max_w, start_size, min_size=24):
-    size = start_size
-    while size > min_size:
-        f = _font(path, size)
-        if draw.textlength(text, font=f) <= max_w:
-            return f
-        size -= 2
-    return _font(path, min_size)
-
-
-def _progress_bar(draw, x, y, w, h, frac):
-    frac = max(0.0, min(1.0, frac))
-    draw.rounded_rectangle((x, y, x + w, y + h), radius=h // 2, fill=(255, 255, 255, 50))
-    fw = int(w * frac)
-    if fw > h:
-        draw.rounded_rectangle((x, y, x + fw, y + h), radius=h // 2, fill=(255, 200, 80, 255))
-
-
-def generate_profile_image(avatar_bytes: bytes, name: str, chat_xp: int, voice_xp: int, points: int):
-    """프로필 카드: 왼쪽에 아바타+이름, 오른쪽에 채팅/음성 레벨 + 포인트."""
-    from utils.stats import level_from_xp, xp_for_level
-    W, H = 1000, 520
-    try:
-        bg = Image.open("profile_bg.png").convert("RGBA").resize((W, H))
-    except FileNotFoundError:
-        bg = Image.new("RGBA", (W, H), (30, 24, 54, 255))
-
-    bg = Image.alpha_composite(bg, Image.new("RGBA", (W, H), (10, 6, 26, PROFILE_BG_DIM)))
-
-    panel = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    pd = ImageDraw.Draw(panel)
-    pd.rounded_rectangle((26, 26, W - 26, H - 26), radius=34, fill=(16, 11, 36, PROFILE_PANEL_ALPHA))
-    pd.rounded_rectangle((26, 26, W - 26, H - 26), radius=34, outline=(255, 205, 90, 130), width=3)
-    img = Image.alpha_composite(bg, panel)
-    draw = ImageDraw.Draw(img)
-
-    gold, white, sub, black = (255, 205, 90), (245, 242, 255), (196, 190, 222), (0, 0, 0)
-
-    # ===== 왼쪽: 아바타 + 이름 =====
-    cx, cy, r = 216, 198, 100
-    draw.ellipse((cx - r - 7, cy - r - 7, cx + r + 7, cy + r + 7), fill=(255, 205, 90, 255))
-    if avatar_bytes:
-        try:
-            av = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
-            av = ImageOps.fit(av, (r * 2, r * 2), centering=(0.5, 0.5))
-            mask = Image.new("L", (r * 2, r * 2), 0)
-            ImageDraw.Draw(mask).ellipse((0, 0, r * 2, r * 2), fill=255)
-            av.putalpha(mask)
-            img.paste(av, (cx - r, cy - r), av)
-            draw = ImageDraw.Draw(img)
-        except Exception as e:
-            print(f"[ERROR] 아바타 합성 오류: {e}")
-    else:
-        draw.ellipse((cx - r, cy - r, cx + r, cy + r), fill=(40, 30, 66, 255))
-
-    f_name = _fit_font(draw, name, TITLE_FONT, 340, 46)
-    draw.text((cx, 356), name, font=f_name, fill=white, anchor="mm", stroke_width=3, stroke_fill=black)
-
-    # 세로 구분선
-    draw.line((404, 78, 404, H - 78), fill=(255, 255, 255, 55), width=2)
-
-    # ===== 오른쪽: 채팅/음성 레벨 + 포인트 =====
-    RX0, RX1 = 446, W - 60
-    f_label = _font(UI_FONT, 28)
-    f_lv = _font(TITLE_FONT, 54)
-    f_small = _font(UI_FONT, 20)
-    f_pts = _font(TITLE_FONT, 50)
-
-    def stat_row(y, label, lv, into, span):
-        draw.text((RX0, y), label, font=f_label, fill=sub, stroke_width=1, stroke_fill=black)
-        draw.text((RX1, y - 16), f"Lv. {lv}", font=f_lv, fill=gold, anchor="ra", stroke_width=2, stroke_fill=black)
-        _progress_bar(draw, RX0, y + 52, RX1 - RX0, 18, into / span)
-        draw.text((RX1, y + 76), f"{into:,} / {span:,} XP", font=f_small, fill=sub, anchor="ra")
-
-    chat_lv, voice_lv = level_from_xp(chat_xp), level_from_xp(voice_xp)
-    ci, cs = chat_xp - xp_for_level(chat_lv), max(1, xp_for_level(chat_lv + 1) - xp_for_level(chat_lv))
-    vi, vs = voice_xp - xp_for_level(voice_lv), max(1, xp_for_level(voice_lv + 1) - xp_for_level(voice_lv))
-    stat_row(96, "채팅 레벨", chat_lv, ci, cs)
-    stat_row(228, "음성 레벨", voice_lv, vi, vs)
-
-    draw.text((RX0, 372), "보유 포인트", font=f_label, fill=sub, stroke_width=1, stroke_fill=black)
-    draw.text((RX1, 356), f"{points:,} P", font=f_pts, fill=gold, anchor="ra", stroke_width=2, stroke_fill=black)
-
-    out = io.BytesIO()
-    img.convert("RGB").save(out, "PNG")
-    out.seek(0)
-    return out.getvalue()
-
 
 @app_commands.guild_only()
 class EconomyCog(commands.Cog):
@@ -138,27 +33,7 @@ class EconomyCog(commands.Cog):
     async def profile(self, interaction: discord.Interaction, 유저: Optional[discord.Member] = None):
         await interaction.response.defer(ephemeral=False)
         target = 유저 or interaction.user
-
-        chat_xp = await get_xp(target.id)
-        voice_xp = await get_voice_xp(target.id)
-        points_val = await get_points(target.id)
-
-        avatar_bytes = b""
-        if target.display_avatar:
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(target.display_avatar.url) as resp:
-                        if resp.status == 200:
-                            avatar_bytes = await resp.read()
-            except Exception:
-                pass
-
-        image_data = await asyncio.to_thread(
-            generate_profile_image, avatar_bytes, target.display_name, chat_xp, voice_xp, points_val
-        )
-        if not image_data:
-            return await interaction.followup.send("❌ 이미지 생성에 실패했습니다. 서버 관리자에게 문의하세요.")
-        file = discord.File(fp=io.BytesIO(image_data), filename="profile_card.png")
+        file = await build_profile_card(target)
         await interaction.followup.send(file=file)
 
     @app_commands.command(name="지갑", description="포인트 보유량을 확인합니다.")
@@ -240,6 +115,46 @@ class EconomyCog(commands.Cog):
         log_embed.add_field(name="대상", value=유저.mention, inline=False)
         log_embed.add_field(name="금액", value=f"{format_num(금액)} {CURRENCY}", inline=False)
         await self._send_log(interaction.guild, REVOKE_LOG_CHANNEL_ID, log_embed)
+
+    @app_commands.command(name="초기화", description="[관리자] 모든 유저의 데이터를 초기화합니다. (되돌릴 수 없음)")
+    @app_commands.default_permissions(administrator=True)
+    async def reset_all(self, interaction: discord.Interaction):
+        if not interaction.user.guild_permissions.administrator:
+            return await interaction.response.send_message("❌ 관리자만 사용할 수 있습니다.", ephemeral=True)
+        await interaction.response.send_message(
+            "⚠️ **정말로 모든 유저의 데이터를 초기화할까요?**\n"
+            "포인트·채팅/음성 레벨·경험치·미션·활동 기록·경고가 **전부 삭제**됩니다.\n"
+            "이 작업은 **되돌릴 수 없습니다.**",
+            view=ResetConfirmView(interaction.user.id), ephemeral=True)
+
+
+class ResetConfirmView(discord.ui.View):
+    def __init__(self, owner_id: int):
+        super().__init__(timeout=30)
+        self.owner_id = owner_id
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("본인만 조작할 수 있습니다.", ephemeral=True)
+            return False
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("관리자만 사용할 수 있습니다.", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="초기화 확정", style=discord.ButtonStyle.danger, emoji="🗑️")
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await reset_all_data()
+        for child in self.children:
+            child.disabled = True
+        await interaction.response.edit_message(content="✅ 모든 유저 데이터가 초기화되었습니다.", view=self)
+
+    @discord.ui.button(label="취소", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        for child in self.children:
+            child.disabled = True
+        await interaction.response.edit_message(content="초기화를 취소했습니다.", view=self)
+
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(EconomyCog(bot))

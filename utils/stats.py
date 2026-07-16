@@ -334,3 +334,82 @@ async def add_voice_xp(user_id: int, amount: int):
             _save_stats_nolock(stats)
             return level_from_xp(old_xp), level_from_xp(new_xp), new_xp
     return await asyncio.to_thread(_task)
+
+
+# ==========================================
+# 📈 활동 집계(기간별 랭킹) / 순위 / 초기화
+# ==========================================
+ACTIVITY_KEEP_DAYS = 32  # 일별 기록 보관 기간
+
+
+def _prune_daily(d: dict) -> dict:
+    if not isinstance(d, dict):
+        return {}
+    cutoff = (datetime.now(tz=KST).date() - timedelta(days=ACTIVITY_KEEP_DAYS)).isoformat()
+    return {k: v for k, v in d.items() if k >= cutoff}
+
+
+async def bump_activity(user_id: int, kind: str, amount: int = 1):
+    """활동량 누적. kind: 'voice'(분) 또는 'chat'(활동횟수). 누계 + 일별 기록."""
+    def _task():
+        with lock:
+            stats = _load_stats_nolock()
+            rec = ensure_user(stats, str(user_id))
+            today = _today_str()
+            rec[f"{kind}_total"] = int(rec.get(f"{kind}_total", 0)) + amount
+            daily = _prune_daily(rec.get(f"{kind}_daily", {}))
+            daily[today] = int(daily.get(today, 0)) + amount
+            rec[f"{kind}_daily"] = daily
+            _save_stats_nolock(stats)
+    await asyncio.to_thread(_task)
+
+
+async def get_activity_ranking(kind: str, days: Optional[int] = None):
+    """(user_id, count) 내림차순. days=None 이면 전체 누계, 아니면 최근 days일 합계."""
+    def _task():
+        with lock:
+            stats = _load_stats_nolock()
+        rows = []
+        if days is None:
+            for uid, rec in stats.items():
+                if str(uid).isdigit() and isinstance(rec, dict):
+                    c = int(rec.get(f"{kind}_total", 0))
+                    if c > 0:
+                        rows.append((int(uid), c))
+        else:
+            cutoff = (datetime.now(tz=KST).date() - timedelta(days=days - 1)).isoformat()
+            for uid, rec in stats.items():
+                if str(uid).isdigit() and isinstance(rec, dict):
+                    daily = rec.get(f"{kind}_daily", {})
+                    if isinstance(daily, dict):
+                        c = sum(int(v) for k, v in daily.items() if k >= cutoff)
+                        if c > 0:
+                            rows.append((int(uid), c))
+        rows.sort(key=lambda x: x[1], reverse=True)
+        return rows
+    return await asyncio.to_thread(_task)
+
+
+async def get_rank(user_id: int, key: str) -> Optional[int]:
+    """특정 값(key)을 기준으로 전체에서 내 순위(1위부터). 값이 0이면 None."""
+    def _task():
+        with lock:
+            stats = _load_stats_nolock()
+        me = int(stats.get(str(user_id), {}).get(key, 0)) if str(user_id) in stats else 0
+        if me <= 0:
+            return None
+        rank = 1
+        for uid, rec in stats.items():
+            if str(uid).isdigit() and isinstance(rec, dict):
+                if int(rec.get(key, 0)) > me:
+                    rank += 1
+        return rank
+    return await asyncio.to_thread(_task)
+
+
+async def reset_all_data():
+    """모든 유저 데이터 초기화 (stats.json 비우기). 되돌릴 수 없음."""
+    def _task():
+        with lock:
+            _save_stats_nolock({})
+    await asyncio.to_thread(_task)
