@@ -118,8 +118,8 @@ class EconomyCog(commands.Cog):
         self.bot = bot
 
     async def _send_log(self, guild: discord.Guild, channel_id: int, embed: discord.Embed):
-        # 로그는 직접 올리지 않고 공유 큐에 적재 → 로그봇이 채널에 최종 기록
-        enqueue_embed(channel_id, embed.to_dict())
+        # 로그는 직접 올리지 않고 공유 큐에 적재 → 로그봇이 채널에 최종 기록 (대상 서버만)
+        enqueue_embed(channel_id, embed.to_dict(), guild=guild)
 
     @app_commands.command(name="프로필", description="자신 또는 다른 유저의 전적 및 상태를 예쁜 프로필 카드로 확인합니다.")
     @app_commands.describe(유저="확인할 유저 (선택하지 않으면 본인)")

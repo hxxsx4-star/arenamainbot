@@ -3,7 +3,8 @@ from datetime import datetime, timedelta, timezone
 import discord
 from discord.ext import commands, tasks
 
-from utils.stats import add_points
+from utils.stats import add_points, get_points, format_num
+from utils.logs import VOICE_POINT_LOG_CH, enqueue_embed, is_target_guild
 
 # 통화방 1시간 유지 시 지급할 포인트
 VOICE_REWARD_POINT = 10
@@ -12,8 +13,8 @@ VOICE_REWARD_POINT = 10
 class VoiceRewardsCog(commands.Cog):
     """통화방에 1시간 접속을 유지하면 포인트를 지급하는 Cog.
 
-    (음성 입장/퇴장/이동 '로그'는 로그봇의 voice_logger가 담당합니다. 여기서는 포인트 지급만.)
-    자동 지급은 스팸을 피하기 위해 별도 채널 로그 없이 조용히 처리합니다.
+    (음성 입장/퇴장/이동 '로그'는 로그봇의 voice_logger가 담당합니다. 여기서는 포인트 지급.)
+    포인트 획득 시 '잠수 포인트 로그' 채널로 기록합니다.
     """
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -41,9 +42,23 @@ class VoiceRewardsCog(commands.Cog):
                     # AFK 채널은 보상에서 제외
                     if guild.afk_channel and member.voice.channel.id == guild.afk_channel.id:
                         continue
+                    # 대상 서버가 아니면 지급/로그 생략
+                    if not is_target_guild(guild):
+                        self.user_join_times[user_id]["time"] += timedelta(hours=1)
+                        continue
                     await add_points(user_id, VOICE_REWARD_POINT)
                     # 다음 보상 기준을 1시간 뒤로 이동
                     self.user_join_times[user_id]["time"] += timedelta(hours=1)
+                    # 잠수 포인트 로그
+                    current = await get_points(user_id)
+                    embed = discord.Embed(
+                        description=(f"🎙️ {member.mention} 님이 통화방 1시간 유지로 "
+                                     f"{VOICE_REWARD_POINT} P 를 획득했습니다! "
+                                     f"(현재 보유: {format_num(current)} P)"),
+                        color=discord.Color.gold(),
+                    )
+                    embed.set_footer(text=f"유저 ID: {user_id}")
+                    enqueue_embed(VOICE_POINT_LOG_CH, embed.to_dict(), guild=guild)
                 else:
                     self.user_join_times.pop(user_id, None)
 

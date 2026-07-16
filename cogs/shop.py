@@ -46,8 +46,8 @@ async def send_shop_log(interaction: discord.Interaction, item_name: str, price:
     embed.add_field(name="상품명", value=item_name, inline=True)
     embed.add_field(name="결제 금액", value=f"{format_num(price)} P", inline=True)
 
-    # 로그는 직접 올리지 않고 공유 큐에 적재 → 로그봇이 상점 구매 로그 채널에 기록
-    enqueue_embed(SHOP_LOG_CHANNEL_ID, embed.to_dict())
+    # 로그는 직접 올리지 않고 공유 큐에 적재 → 로그봇이 상점 구매 로그 채널에 기록 (대상 서버만)
+    enqueue_embed(SHOP_LOG_CHANNEL_ID, embed.to_dict(), guild=interaction.guild)
 
 class PurchaseButton(discord.ui.Button):
     def __init__(self, label: str, role_id: int, price: int, row: int):

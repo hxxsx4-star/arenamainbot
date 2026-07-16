@@ -4,11 +4,11 @@ from discord.ext import commands
 from discord import app_commands
 
 from utils.stats import add_warning, reduce_warning
-from utils.logs import enqueue_embed
+from utils.logs import enqueue_embed, WARN_LOG_CH, WARN_REDUCE_LOG_CH
 
-# 경고/차감 로그 채널 (요청 목록 외 기존 채널 유지). 로그봇이 최종 기록합니다.
-WARN_LOG_CHANNEL_ID = 1521815098484723823
-REDUCE_LOG_CHANNEL_ID = 1523304851113508965
+# 경고/차감 로그 채널 (공유 utils/logs.py 기준). 로그봇이 최종 기록합니다.
+WARN_LOG_CHANNEL_ID = WARN_LOG_CH
+REDUCE_LOG_CHANNEL_ID = WARN_REDUCE_LOG_CH
 
 class ModerationCog(commands.Cog):
     """경고 / 차감 등 제재 기록 관리용 Cog"""
@@ -61,7 +61,7 @@ class ModerationCog(commands.Cog):
         if extra_line:
             log_embed.add_field(name="조치", value="경고 3회 누적으로 자동 서버 차단", inline=False)
         log_embed.add_field(name="사유", value=reason, inline=False)
-        enqueue_embed(WARN_LOG_CHANNEL_ID, log_embed.to_dict())
+        enqueue_embed(WARN_LOG_CHANNEL_ID, log_embed.to_dict(), guild=interaction.guild)
 
     @app_commands.command(name="차감", description="[관리자] 특정 유저의 경고를 차감합니다.")
     @app_commands.default_permissions(manage_guild=True)
@@ -91,7 +91,7 @@ class ModerationCog(commands.Cog):
         log_embed.add_field(name="누적 경고", value=f"{old_warn}회 → {new_warn}회", inline=False)
         log_embed.add_field(name="채널", value=interaction.channel.mention, inline=False)
         log_embed.add_field(name="사유", value=reason, inline=False)
-        enqueue_embed(REDUCE_LOG_CHANNEL_ID, log_embed.to_dict())
+        enqueue_embed(REDUCE_LOG_CHANNEL_ID, log_embed.to_dict(), guild=interaction.guild)
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(ModerationCog(bot))
