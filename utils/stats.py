@@ -295,3 +295,25 @@ async def record_streak(user_id: int) -> int:
             _save_stats_nolock(stats)
             return streak
     return await asyncio.to_thread(_task)
+
+
+# ---------- 음성(통화방) 경험치 ----------
+async def get_voice_xp(user_id: int) -> int:
+    def _task():
+        with lock:
+            stats = _load_stats_nolock()
+            return int(ensure_user(stats, str(user_id)).get("음성경험치", 0))
+    return await asyncio.to_thread(_task)
+
+
+async def add_voice_xp(user_id: int, amount: int):
+    def _task():
+        with lock:
+            stats = _load_stats_nolock()
+            rec = ensure_user(stats, str(user_id))
+            old_xp = int(rec.get("음성경험치", 0))
+            new_xp = max(0, old_xp + amount)
+            rec["음성경험치"] = new_xp
+            _save_stats_nolock(stats)
+            return level_from_xp(old_xp), level_from_xp(new_xp), new_xp
+    return await asyncio.to_thread(_task)

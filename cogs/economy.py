@@ -11,7 +11,7 @@ import asyncio
 import aiohttp
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-from utils.stats import load_stats, format_num, get_points, add_points, spend_points, process_attendance, record_streak, bump_mission
+from utils.stats import load_stats, format_num, get_points, add_points, spend_points, process_attendance, record_streak, bump_mission, get_xp, get_voice_xp, level_from_xp
 from utils.logs import POINT_GIVE_LOG_CH, POINT_TAKE_LOG_CH, enqueue_embed
 
 GRANT_LOG_CHANNEL_ID = POINT_GIVE_LOG_CH
@@ -21,96 +21,61 @@ CURRENCY, DAILY_REWARD, ATTEND_KEY = "P", 50, "출석_최근"
 try: KST = timezone(timedelta(hours=9), 'KST')
 except: KST = timezone(timedelta(hours=9))
 
-def parse_user_info(raw_name: str):
-    """서버 프로필 닉네임에서 나이, 롤 닉네임, 성별, 티어를 추출합니다."""
-    # ✨ 다국어 처리를 위해 정규식 그대로 사용 (.+는 한자, 일어 등 모든 문자 캡처 가능)
-    match = re.match(r'^(\d{2})\s+(.+)\s+(남|여)\s*(.*)$', raw_name.strip())
-    if match:
-        age = match.group(1) + "년생"
-        nickname = match.group(2).strip()
-        gender = match.group(3)
-        tier = match.group(4) if match.group(4) else "티어 없음"
-        return age, nickname, gender, tier
-
-    age = raw_name[:2] + "년생" if len(raw_name) >= 2 and raw_name[:2].isdigit() else "??"
-    temp = raw_name[2:].lstrip() if len(raw_name) >= 2 else raw_name
-    nickname = re.sub(r'\s+(남|여)[^#]*$', '', temp).strip()
-    return age, nickname, "-", "-"
-
-def generate_profile_image(avatar_bytes: bytes, raw_nickname: str, join_date: str, points: str, match_count: str, mvp_count: str, warning_count: str) -> Optional[bytes]:
+def generate_profile_image(avatar_bytes: bytes, name: str, chat_level: int, voice_level: int, points: int):
+    """프로필 카드: 배경(profile_bg.png) 위에 채팅/음성 레벨 + 포인트를 표시."""
+    W, H = 1000, 560
     try:
-        bg = Image.open("profile_bg.png")
-        bg = bg.resize((1200, 700))
+        bg = Image.open("profile_bg.png").convert("RGBA").resize((W, H))
     except FileNotFoundError:
-        bg = Image.new('RGB', (1200, 700), color=(25, 28, 35))
+        bg = Image.new("RGBA", (W, H), (25, 28, 45, 255))
 
-    img = bg.copy()
+    # 가독성용 반투명 패널
+    overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    od = ImageDraw.Draw(overlay)
+    od.rounded_rectangle((36, 36, W - 36, H - 36), radius=28, fill=(10, 8, 24, 170))
+    img = Image.alpha_composite(bg, overlay)
     draw = ImageDraw.Draw(img)
 
-    # ⚠️ 중요: 한자, 일본어 등을 제대로 출력하려면 "font.ttf" 파일이 NotoSansCJK 등 다국어 지원 폰트여야 합니다.
-    font_path = "font.ttf"
-    try:
-        info_font = ImageFont.truetype(font_path, size=42)
-        main_font = ImageFont.truetype(font_path, size=42)
-        small_font = ImageFont.truetype(font_path, size=26)
-    except OSError:
-        info_font = ImageFont.load_default()
-        main_font = ImageFont.load_default()
-        small_font = ImageFont.load_default()
+    fp = "font.ttf"
+    def F(sz):
+        try:
+            return ImageFont.truetype(fp, sz)
+        except OSError:
+            return ImageFont.load_default()
+    f_name, f_label, f_val = F(52), F(36), F(46)
 
-    age, extracted_nickname, gender, tier = parse_user_info(raw_nickname)
-    text_color = (255, 255, 255)
-
+    # 아바타(원형)
     try:
         if avatar_bytes:
-            avatar = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
-            avatar = avatar.resize((160, 160))
-
-            mask = Image.new("L", avatar.size, 0)
-            draw_mask = ImageDraw.Draw(mask)
-            draw_mask.ellipse((0, 0) + avatar.size, fill=255)
-
-            avatar_pasted = ImageOps.fit(avatar, mask.size, centering=(0.5, 0.5))
-            avatar_pasted.putalpha(mask)
-
-            img.paste(avatar_pasted, (150, 150), avatar_pasted)
+            av = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA").resize((150, 150))
+            mask = Image.new("L", av.size, 0)
+            ImageDraw.Draw(mask).ellipse((0, 0) + av.size, fill=255)
+            av = ImageOps.fit(av, mask.size, centering=(0.5, 0.5))
+            av.putalpha(mask)
+            img.paste(av, (78, 78), av)
+            draw = ImageDraw.Draw(img)
     except Exception as e:
         print(f"[ERROR] 아바타 합성 오류: {e}")
 
-    nick_font_size = 65
-    try:
-        nickname_font = ImageFont.truetype(font_path, size=nick_font_size)
-        while True:
-            try: text_width = draw.textlength(extracted_nickname, font=nickname_font)
-            except AttributeError: text_width = draw.textsize(extracted_nickname, font=nickname_font)[0]
+    white, gold, sub = (255, 255, 255), (255, 205, 90), (205, 205, 225)
+    black = (0, 0, 0)
+    draw.text((256, 96), name, font=f_name, fill=white, stroke_width=2, stroke_fill=black)
 
-            if text_width <= 700 or nick_font_size <= 30:
-                break
-            nick_font_size -= 2
-            nickname_font = ImageFont.truetype(font_path, size=nick_font_size)
-    except OSError:
-        nickname_font = ImageFont.load_default()
+    rows = [
+        ("채팅 레벨", f"Lv. {chat_level}"),
+        ("음성 레벨", f"Lv. {voice_level}"),
+        ("포인트", f"{points:,} P"),
+    ]
+    y = 258
+    for label, value in rows:
+        draw.text((92, y + 4), label, font=f_label, fill=sub, stroke_width=1, stroke_fill=black)
+        draw.text((470, y), value, font=f_val, fill=gold, stroke_width=2, stroke_fill=black)
+        y += 88
 
-    draw.text((340, 155), extracted_nickname, fill=text_color, font=nickname_font)
-    draw.text((340, 235), f"티어: {tier}", fill=text_color, font=info_font)
-    draw.text((340, 285), f"나이/성별 : {age}/{gender}", fill=text_color, font=info_font)
-
-    stat_x1 = 160
-    stat_x2 = 620
-    stat_y_row1 = 400
-    draw.text((stat_x1, stat_y_row1), f"보유 포인트: {points}", fill=text_color, font=main_font)
-    draw.text((stat_x2, stat_y_row1), f"누적 경고: {warning_count}", fill=text_color, font=main_font)
-
-    stat_y_row2 = 480
-    draw.text((stat_x1, stat_y_row2), f"내전 참여 수: {match_count}", fill=text_color, font=main_font)
-    draw.text((stat_x2, stat_y_row2), f"내전 MVP 횟수: {mvp_count}", fill=text_color, font=main_font)
-
-    draw.text((1050, 560), f"서버 가입일: {join_date}", fill=text_color, font=small_font, anchor="rm")
-
-    with io.BytesIO() as image_binary:
-        img.save(image_binary, 'PNG')
-        image_binary.seek(0)
-        return image_binary.getvalue()
+    out = io.BytesIO()
+    img.convert("RGB").save(out, "PNG")
+    out.seek(0)
+    return out.getvalue()
 
 @app_commands.guild_only()
 class EconomyCog(commands.Cog):
@@ -121,54 +86,32 @@ class EconomyCog(commands.Cog):
         # 로그는 직접 올리지 않고 공유 큐에 적재 → 로그봇이 채널에 최종 기록 (대상 서버만)
         enqueue_embed(channel_id, embed.to_dict(), guild=guild)
 
-    @app_commands.command(name="프로필", description="자신 또는 다른 유저의 전적 및 상태를 예쁜 프로필 카드로 확인합니다.")
+    @app_commands.command(name="프로필", description="자신 또는 다른 유저의 채팅/음성 레벨과 포인트를 확인합니다.")
     @app_commands.describe(유저="확인할 유저 (선택하지 않으면 본인)")
     async def profile(self, interaction: discord.Interaction, 유저: Optional[discord.Member] = None):
         await interaction.response.defer(ephemeral=False)
-
         target = 유저 or interaction.user
-        stats = await load_stats()
 
-        rec = stats.get(str(target.id), {})
-        match_count = f"{rec.get('match_count', 0)}회"
-        mvp_count = f"{rec.get('mvp_count', 0)}회"
-
-        warnings = rec.get("경고", rec.get("warning", 0))
-        warning_count = f"{warnings}회"
-
+        chat_lv = level_from_xp(await get_xp(target.id))
+        voice_lv = level_from_xp(await get_voice_xp(target.id))
         points_val = await get_points(target.id)
-        points = f"{format_num(points_val)}P"
-
-        if target.joined_at:
-            join_date = target.joined_at.astimezone(KST).strftime("%Y년 %m월 %d일")
-        else:
-            join_date = "알 수 없음"
-
-        raw_nickname = target.display_name
 
         avatar_bytes = b""
         if target.display_avatar:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(target.display_avatar.url) as resp:
-                    if resp.status == 200:
-                        avatar_bytes = await resp.read()
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(target.display_avatar.url) as resp:
+                        if resp.status == 200:
+                            avatar_bytes = await resp.read()
+            except Exception:
+                pass
 
         image_data = await asyncio.to_thread(
-            generate_profile_image,
-            avatar_bytes,
-            raw_nickname,
-            join_date,
-            points,
-            match_count,
-            mvp_count,
-            warning_count
+            generate_profile_image, avatar_bytes, target.display_name, chat_lv, voice_lv, points_val
         )
-
         if not image_data:
-            await interaction.followup.send("❌ 이미지 생성에 실패했습니다. 서버 관리자에게 문의하세요.")
-            return
-
-        file = discord.File(fp=io.BytesIO(image_data), filename='profile_card.png')
+            return await interaction.followup.send("❌ 이미지 생성에 실패했습니다. 서버 관리자에게 문의하세요.")
+        file = discord.File(fp=io.BytesIO(image_data), filename="profile_card.png")
         await interaction.followup.send(file=file)
 
     @app_commands.command(name="지갑", description="포인트 보유량을 확인합니다.")
