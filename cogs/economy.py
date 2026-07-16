@@ -11,7 +11,7 @@ import asyncio
 import aiohttp
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-from utils.stats import load_stats, format_num, get_points, add_points, spend_points, process_attendance
+from utils.stats import load_stats, format_num, get_points, add_points, spend_points, process_attendance, record_streak, bump_mission
 from utils.logs import POINT_GIVE_LOG_CH, POINT_TAKE_LOG_CH, enqueue_embed
 
 GRANT_LOG_CHANNEL_ID = POINT_GIVE_LOG_CH
@@ -188,7 +188,19 @@ class EconomyCog(commands.Cog):
         if not success:
             await interaction.response.send_message("이미 오늘 출석했습니다.", ephemeral=True)
             return
-        await interaction.response.send_message(f"출석 보상 {format_num(DAILY_REWARD)} {CURRENCY}가 지급되었습니다!", ephemeral=True)
+
+        # 연속 출석 + 미션 카운트 + 연속 보너스
+        streak = await record_streak(user_id)
+        await bump_mission(user_id, "attend")
+        bonus = 0
+        if streak > 0 and streak % 7 == 0:   # 7일마다 보너스
+            bonus = 100
+            await add_points(user_id, bonus)
+
+        msg = f"✅ 출석 완료! {format_num(DAILY_REWARD)} {CURRENCY} 지급 (🔥 {streak}일 연속)"
+        if bonus:
+            msg += f"\n🎁 {streak}일 연속 보너스 +{format_num(bonus)} {CURRENCY}!"
+        await interaction.response.send_message(msg, ephemeral=True)
 
     @app_commands.command(name="순위", description="서버 내 포인트 순위를 확인합니다.")
     async def ranking(self, interaction: discord.Interaction):

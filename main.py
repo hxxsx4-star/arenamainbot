@@ -32,7 +32,9 @@ class MainBot(commands.Bot):
             "cogs.economy",        # 포인트/출석/프로필 (지급·회수 로그 → 공유 큐)
             "cogs.shop",           # 상점 (구매 로그 → 공유 큐)
             "cogs.gacha",          # 가챠
-            "cogs.minigames",      # 미니게임
+            "cogs.minigames",      # 미니게임 (주사위/슬롯/가위바위보/동전 베팅)
+            "cogs.leveling",       # 레벨/경험치 (채팅 활동)
+            "cogs.missions",       # 일일 미션
             "cogs.moderation",     # 경고/차감 (로그 → 공유 큐)
             "cogs.ticket_system",  # 티켓
             "cogs.help_kor",       # 도움말
