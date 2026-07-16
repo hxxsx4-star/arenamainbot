@@ -21,61 +21,93 @@ CURRENCY, DAILY_REWARD, ATTEND_KEY = "P", 50, "출석_최근"
 try: KST = timezone(timedelta(hours=9), 'KST')
 except: KST = timezone(timedelta(hours=9))
 
-def generate_profile_image(avatar_bytes: bytes, name: str, chat_level: int, voice_level: int, points: int):
-    """프로필 카드: 배경(profile_bg.png) 위에 채팅/음성 레벨 + 포인트를 표시."""
+# 프로필 카드 배경/투명도 설정 (배경에 UI가 안 어울리면 이 값들을 조절하세요)
+PROFILE_BG_DIM = 95        # 배경 전체 어둡게 (0=원본, 255=완전 검정)
+PROFILE_PANEL_ALPHA = 165  # 좌측 패널 투명도 (0=투명, 255=불투명)
+TITLE_FONT = "font.ttf"    # 이름/제목용 (예쁜 글씨)
+UI_FONT = "font_ui.ttf"    # 숫자/라벨용 (깔끔 고딕)
+
+
+def _font(path, size):
+    try:
+        return ImageFont.truetype(path, size)
+    except OSError:
+        return ImageFont.load_default()
+
+
+def _progress_bar(draw, x, y, w, h, frac):
+    frac = max(0.0, min(1.0, frac))
+    draw.rounded_rectangle((x, y, x + w, y + h), radius=h // 2, fill=(255, 255, 255, 45))
+    fw = int(w * frac)
+    if fw > h:
+        draw.rounded_rectangle((x, y, x + fw, y + h), radius=h // 2, fill=(255, 205, 90, 255))
+
+
+def generate_profile_image(avatar_bytes: bytes, name: str, chat_xp: int, voice_xp: int, points: int):
+    """프로필 카드: 배경(profile_bg.png) 좌측 패널에 채팅/음성 레벨 + 포인트를 예쁘게 표시."""
+    from utils.stats import level_from_xp, xp_for_level
     W, H = 1000, 560
     try:
         bg = Image.open("profile_bg.png").convert("RGBA").resize((W, H))
     except FileNotFoundError:
-        bg = Image.new("RGBA", (W, H), (25, 28, 45, 255))
+        bg = Image.new("RGBA", (W, H), (30, 24, 54, 255))
 
-    # 가독성용 반투명 패널
-    overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    od = ImageDraw.Draw(overlay)
-    od.rounded_rectangle((36, 36, W - 36, H - 36), radius=28, fill=(10, 8, 24, 170))
-    img = Image.alpha_composite(bg, overlay)
+    # 배경 전체 딤 처리
+    bg = Image.alpha_composite(bg, Image.new("RGBA", (W, H), (10, 6, 26, PROFILE_BG_DIM)))
+
+    # 좌측 패널
+    panel = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    pd = ImageDraw.Draw(panel)
+    pd.rounded_rectangle((30, 30, 602, H - 30), radius=32, fill=(18, 12, 40, PROFILE_PANEL_ALPHA))
+    pd.rounded_rectangle((30, 30, 602, H - 30), radius=32, outline=(255, 205, 90, 120), width=2)
+    img = Image.alpha_composite(bg, panel)
     draw = ImageDraw.Draw(img)
 
-    fp = "font.ttf"
-    def F(sz):
+    f_title = _font(TITLE_FONT, 50)
+    f_label = _font(UI_FONT, 26)
+    f_val = _font(UI_FONT, 40)
+    gold, white, sub, black = (255, 205, 90), (245, 242, 255), (188, 182, 214), (0, 0, 0)
+
+    # 아바타 + 골드 링
+    cx, cy, r = 316, 150, 80
+    draw.ellipse((cx - r - 6, cy - r - 6, cx + r + 6, cy + r + 6), fill=(255, 205, 90, 255))
+    if avatar_bytes:
         try:
-            return ImageFont.truetype(fp, sz)
-        except OSError:
-            return ImageFont.load_default()
-    f_name, f_label, f_val = F(52), F(36), F(46)
-
-    # 아바타(원형)
-    try:
-        if avatar_bytes:
-            av = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA").resize((150, 150))
-            mask = Image.new("L", av.size, 0)
-            ImageDraw.Draw(mask).ellipse((0, 0) + av.size, fill=255)
-            av = ImageOps.fit(av, mask.size, centering=(0.5, 0.5))
+            av = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
+            av = ImageOps.fit(av, (r * 2, r * 2), centering=(0.5, 0.5))
+            mask = Image.new("L", (r * 2, r * 2), 0)
+            ImageDraw.Draw(mask).ellipse((0, 0, r * 2, r * 2), fill=255)
             av.putalpha(mask)
-            img.paste(av, (78, 78), av)
+            img.paste(av, (cx - r, cy - r), av)
             draw = ImageDraw.Draw(img)
-    except Exception as e:
-        print(f"[ERROR] 아바타 합성 오류: {e}")
+        except Exception as e:
+            print(f"[ERROR] 아바타 합성 오류: {e}")
+    else:
+        draw.ellipse((cx - r, cy - r, cx + r, cy + r), fill=(40, 30, 66, 255))
 
-    white, gold, sub = (255, 255, 255), (255, 205, 90), (205, 205, 225)
-    black = (0, 0, 0)
-    draw.text((256, 96), name, font=f_name, fill=white, stroke_width=2, stroke_fill=black)
+    # 이름 (가운데 정렬)
+    draw.text((316, 256), name, font=f_title, fill=white, anchor="mm", stroke_width=2, stroke_fill=black)
+    draw.line((72, 300, 560, 300), fill=(255, 255, 255, 55), width=2)
 
-    rows = [
-        ("채팅 레벨", f"Lv. {chat_level}"),
-        ("음성 레벨", f"Lv. {voice_level}"),
-        ("포인트", f"{points:,} P"),
-    ]
-    y = 258
-    for label, value in rows:
-        draw.text((92, y + 4), label, font=f_label, fill=sub, stroke_width=1, stroke_fill=black)
-        draw.text((470, y), value, font=f_val, fill=gold, stroke_width=2, stroke_fill=black)
-        y += 88
+    chat_lv, voice_lv = level_from_xp(chat_xp), level_from_xp(voice_xp)
+
+    def stat(y, label, value, frac=None):
+        draw.text((74, y), label, font=f_label, fill=sub, stroke_width=1, stroke_fill=black)
+        draw.text((558, y - 4), value, font=f_val, fill=gold, anchor="ra", stroke_width=2, stroke_fill=black)
+        if frac is not None:
+            _progress_bar(draw, 74, y + 46, 484, 14, frac)
+
+    ci, cs = chat_xp - xp_for_level(chat_lv), max(1, xp_for_level(chat_lv + 1) - xp_for_level(chat_lv))
+    vi, vs = voice_xp - xp_for_level(voice_lv), max(1, xp_for_level(voice_lv + 1) - xp_for_level(voice_lv))
+    stat(318, "채팅 레벨", f"Lv. {chat_lv}", ci / cs)
+    stat(402, "음성 레벨", f"Lv. {voice_lv}", vi / vs)
+    stat(484, "보유 포인트", f"{points:,} P")
 
     out = io.BytesIO()
     img.convert("RGB").save(out, "PNG")
     out.seek(0)
     return out.getvalue()
+
 
 @app_commands.guild_only()
 class EconomyCog(commands.Cog):
@@ -92,8 +124,8 @@ class EconomyCog(commands.Cog):
         await interaction.response.defer(ephemeral=False)
         target = 유저 or interaction.user
 
-        chat_lv = level_from_xp(await get_xp(target.id))
-        voice_lv = level_from_xp(await get_voice_xp(target.id))
+        chat_xp = await get_xp(target.id)
+        voice_xp = await get_voice_xp(target.id)
         points_val = await get_points(target.id)
 
         avatar_bytes = b""
@@ -107,7 +139,7 @@ class EconomyCog(commands.Cog):
                 pass
 
         image_data = await asyncio.to_thread(
-            generate_profile_image, avatar_bytes, target.display_name, chat_lv, voice_lv, points_val
+            generate_profile_image, avatar_bytes, target.display_name, chat_xp, voice_xp, points_val
         )
         if not image_data:
             return await interaction.followup.send("❌ 이미지 생성에 실패했습니다. 서버 관리자에게 문의하세요.")
