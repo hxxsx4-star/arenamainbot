@@ -1,10 +1,12 @@
 import re
 import time
+import asyncio
 
 import discord
 from discord.ext import commands
+from discord import app_commands
 
-from utils.stats import set_nickname
+from utils.stats import set_nickname, load_stats
 from utils.logs import is_target_guild
 from utils import riot_verify
 from utils.site_roster import add_to_roster
@@ -169,6 +171,53 @@ class OnboardingCog(commands.Cog):
             print(f"[온보딩] {member} 님 DM 이 닫혀있어 안내를 보내지 못했습니다.")
         except Exception as e:
             print(f"[온보딩] DM 전송 실패: {e}")
+
+    @app_commands.command(
+        name="명단동기화",
+        description="[관리자] 과거에 롤 닉네임을 등록한 유저 전원을 사이트 소환사 명단에 등록합니다.")
+    @app_commands.default_permissions(manage_guild=True)
+    async def sync_roster(self, interaction: discord.Interaction):
+        if not (interaction.user.guild_permissions.administrator
+                or interaction.user.guild_permissions.manage_guild):
+            return await interaction.response.send_message(
+                "❌ 관리자만 사용할 수 있습니다.", ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+
+        stats = await load_stats()
+        targets = [(uid, rec["롤닉"]) for uid, rec in stats.items()
+                   if isinstance(rec, dict) and rec.get("롤닉")]
+        if not targets:
+            return await interaction.followup.send("등록된 롤 닉네임이 없습니다.", ephemeral=True)
+
+        await interaction.followup.send(
+            f"⏳ {len(targets)}명 동기화 시작... "
+            f"{'(실제 티어 조회 포함 — 인원이 많으면 몇 분 걸릴 수 있어요)' if riot_verify.enabled() else '(라이엇 미연동 — 티어 없이 등록)'}",
+            ephemeral=True)
+
+        guild = interaction.guild
+        added = tiered = left = 0
+        for uid, nick in targets:
+            member = guild.get_member(int(uid)) if uid.isdigit() else None
+            avatar = str(member.display_avatar.url) if member else ""
+            if not member:
+                left += 1
+            tier = ""
+            if riot_verify.enabled():
+                puuid = await riot_verify.get_puuid(nick)
+                if puuid:
+                    tier = await riot_verify.get_solo_tier(puuid)
+                    if tier:
+                        tiered += 1
+                await asyncio.sleep(1.3)  # 라이엇 API 속도 제한 보호
+            await add_to_roster(nick, tier=tier, discord_id=uid, avatar=avatar)
+            added += 1
+
+        await interaction.followup.send(
+            f"✅ 명단 동기화 완료!\n"
+            f"- 등록/갱신: **{added}명**\n"
+            f"- 실제 티어 조회 성공: **{tiered}명**\n"
+            f"- 서버에 없는 유저(아바타 생략): **{left}명**",
+            ephemeral=True)
 
 
 async def setup(bot: commands.Bot):
