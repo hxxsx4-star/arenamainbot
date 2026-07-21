@@ -221,7 +221,11 @@ def generate_profile_image(avatar_bytes, name, chat_xp, voice_xp, points,
         if icon_path:
             try:
                 icon = Image.open(icon_path).convert("RGBA")
-                icon.thumbnail((150, 150), Image.LANCZOS)
+                # 라이엇 원본은 투명 여백이 매우 큼 → 실제 문양 영역만 잘라 크게 표시
+                bbox = icon.getchannel("A").getbbox()
+                if bbox:
+                    icon = icon.crop(bbox)
+                icon.thumbnail((172, 172), Image.LANCZOS)
                 # 은은한 글로우 후 중앙 부착
                 halo = Image.new("RGBA", (W, H), (0, 0, 0, 0))
                 hd = ImageDraw.Draw(halo)
