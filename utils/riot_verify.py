@@ -68,3 +68,31 @@ async def get_profile_icon(puuid: str):
 def pick_icon(current_icon) -> int:
     """현재 아이콘과 다른 기본 아이콘(0~27) 하나를 랜덤 지정."""
     return random.choice([i for i in range(28) if i != current_icon])
+
+
+_TIER_KO = {
+    "IRON": "아이언", "BRONZE": "브론즈", "SILVER": "실버", "GOLD": "골드",
+    "PLATINUM": "플래티넘", "EMERALD": "에메랄드", "DIAMOND": "다이아몬드",
+    "MASTER": "마스터", "GRANDMASTER": "그랜드마스터", "CHALLENGER": "챌린저",
+}
+
+
+async def get_solo_tier(puuid: str) -> str:
+    """puuid → '다이아몬드 IV' 형식의 솔랭 티어 문자열. 실패/언랭 시 ''."""
+    if not RIOT_API_KEY or not puuid:
+        return ""
+    try:
+        async with aiohttp.ClientSession(
+                headers={"X-Riot-Token": RIOT_API_KEY}) as s:
+            async with s.get(
+                    f"{PLATFORM_HOST}/lol/league/v4/entries/by-puuid/{puuid}",
+                    timeout=aiohttp.ClientTimeout(total=8)) as r:
+                if r.status != 200:
+                    return ""
+                for entry in await r.json():
+                    if entry.get("queueType") == "RANKED_SOLO_5x5":
+                        tier = entry.get("tier", "")
+                        return f"{_TIER_KO.get(tier, tier)} {entry.get('rank', '')}".strip()
+    except Exception:
+        pass
+    return ""

@@ -7,6 +7,7 @@ from discord.ext import commands
 from utils.stats import set_nickname
 from utils.logs import is_target_guild
 from utils import riot_verify
+from utils.site_roster import add_to_roster
 
 # 이 역할을 새로 얻으면 온보딩 DM 을 보냅니다. (서버 기본 권한)
 BASE_ROLE_ID = 1526595902788206653
@@ -36,6 +37,11 @@ class IconVerifyView(discord.ui.View):
                 "❌ 아이콘이 아직 변경되지 않았어요. 롤 클라이언트에서 지정된 아이콘으로 "
                 "변경(저장)한 뒤 잠시 후 다시 눌러주세요.", ephemeral=True)
         await set_nickname(interaction.user.id, self.game, self.nick)
+        if self.game == "lol":
+            # 웹사이트 소환사 명단 자동 등록 (실제 티어 + 디스코드 아바타)
+            tier = await riot_verify.get_solo_tier(self.puuid)
+            await add_to_roster(self.nick, tier=tier, discord_id=interaction.user.id,
+                                avatar=str(interaction.user.display_avatar.url))
         self.stop()
         await interaction.followup.send(
             f"✅ 본인 인증 완료! {_GAME_NAME[self.game]} 닉네임을 `{self.nick}` (으)로 등록했습니다.\n"
@@ -65,6 +71,9 @@ class NickModal(discord.ui.Modal):
         # 라이엇 연동이 없으면 기존처럼 바로 등록
         if not riot_verify.enabled():
             await set_nickname(interaction.user.id, self.game, value)
+            if self.game == "lol":
+                await add_to_roster(value, discord_id=interaction.user.id,
+                                    avatar=str(interaction.user.display_avatar.url))
             return await interaction.response.send_message(
                 f"✅ {_GAME_NAME[self.game]} 닉네임을 `{value}` (으)로 등록했습니다!", ephemeral=True)
 
