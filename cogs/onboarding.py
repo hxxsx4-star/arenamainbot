@@ -1,15 +1,50 @@
 import re
+import time
 
 import discord
 from discord.ext import commands
 
 from utils.stats import set_nickname
 from utils.logs import is_target_guild
+from utils import riot_verify
 
 # 이 역할을 새로 얻으면 온보딩 DM 을 보냅니다. (서버 기본 권한)
 BASE_ROLE_ID = 1526595902788206653
 _NICK_RE = re.compile(r"^.+#.+$")
 _GAME_NAME = {"lol": "롤", "val": "발로란트"}
+
+
+class IconVerifyView(discord.ui.View):
+    """프로필 아이콘 변경으로 라이엇 계정 본인 인증을 진행하는 View."""
+    def __init__(self, game: str, nick: str, puuid: str, icon_id: int):
+        super().__init__(timeout=riot_verify.VERIFY_TTL)
+        self.game, self.nick, self.puuid, self.icon_id = game, nick, puuid, icon_id
+        self.expires = time.time() + riot_verify.VERIFY_TTL
+
+    @discord.ui.button(label="아이콘 변경 완료 — 인증 확인", style=discord.ButtonStyle.success, emoji="🔍")
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if time.time() > self.expires:
+            return await interaction.response.send_message(
+                "⏰ 인증 시간이 만료되었습니다. 닉네임 등록을 다시 시작해주세요.", ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+        current = await riot_verify.get_profile_icon(self.puuid)
+        if current is None:
+            return await interaction.followup.send(
+                "⚠️ 라이엇 조회에 실패했습니다. 잠시 후 다시 시도해주세요.", ephemeral=True)
+        if current != self.icon_id:
+            return await interaction.followup.send(
+                "❌ 아이콘이 아직 변경되지 않았어요. 롤 클라이언트에서 지정된 아이콘으로 "
+                "변경(저장)한 뒤 잠시 후 다시 눌러주세요.", ephemeral=True)
+        await set_nickname(interaction.user.id, self.game, self.nick)
+        self.stop()
+        await interaction.followup.send(
+            f"✅ 본인 인증 완료! {_GAME_NAME[self.game]} 닉네임을 `{self.nick}` (으)로 등록했습니다.\n"
+            "프로필 아이콘은 이제 원래대로 되돌리셔도 됩니다.", ephemeral=True)
+
+    @discord.ui.button(label="취소", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.stop()
+        await interaction.response.send_message("인증을 취소했습니다.", ephemeral=True)
 
 
 class NickModal(discord.ui.Modal):
@@ -26,9 +61,38 @@ class NickModal(discord.ui.Modal):
         if not _NICK_RE.match(value):
             return await interaction.response.send_message(
                 "❌ `닉네임#태그` 형식으로 입력해주세요. (예: 홍길동#KR1)", ephemeral=True)
-        await set_nickname(interaction.user.id, self.game, value)
-        await interaction.response.send_message(
-            f"✅ {_GAME_NAME[self.game]} 닉네임을 `{value}` (으)로 등록했습니다!", ephemeral=True)
+
+        # 라이엇 연동이 없으면 기존처럼 바로 등록
+        if not riot_verify.enabled():
+            await set_nickname(interaction.user.id, self.game, value)
+            return await interaction.response.send_message(
+                f"✅ {_GAME_NAME[self.game]} 닉네임을 `{value}` (으)로 등록했습니다!", ephemeral=True)
+
+        # 본인 인증: 계정 존재 확인 → 아이콘 변경 요청
+        await interaction.response.defer(ephemeral=True)
+        puuid = await riot_verify.get_puuid(value)
+        if not puuid:
+            return await interaction.followup.send(
+                f"❌ `{value}` 라이엇 계정을 찾을 수 없습니다. 닉네임#태그를 확인해주세요.",
+                ephemeral=True)
+        current = await riot_verify.get_profile_icon(puuid)
+        icon_id = riot_verify.pick_icon(current)
+
+        embed = discord.Embed(
+            title="🔐 라이엇 계정 본인 인증",
+            description=(f"`{value}` 계정이 본인 소유인지 확인할게요.\n\n"
+                         "**1.** 롤 클라이언트에 접속해 좌측 상단 **내 프로필 아이콘** 클릭\n"
+                         "**2.** 오른쪽에 보이는 **이 아이콘**으로 변경 후 저장\n"
+                         "**3.** 아래 **인증 확인** 버튼 클릭\n\n"
+                         "⏰ 제한시간 10분 · 인증 후 아이콘은 되돌려도 됩니다."
+                         + ("\n\n💡 발로란트도 **같은 라이엇 계정**이라, "
+                            "롤 클라이언트 아이콘 변경으로 인증됩니다."
+                            if self.game == "val" else "")),
+            color=discord.Color.gold())
+        embed.set_thumbnail(url=riot_verify.ICON_IMG.format(id=icon_id))
+        await interaction.followup.send(
+            embed=embed, view=IconVerifyView(self.game, value, puuid, icon_id),
+            ephemeral=True)
 
 
 class GameRegView(discord.ui.View):
