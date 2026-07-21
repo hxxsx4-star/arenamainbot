@@ -5,6 +5,38 @@ import asyncio
 
 TICKET_CREATOR_ID = "ticket_creator_id"
 
+# ───────────────── 티켓 카테고리 ─────────────────
+# key: (버튼 라벨, 이모지, 채널 접두어, 버튼 스타일, 안내 문구)
+TICKET_CATEGORIES = {
+    "server": {
+        "label": "서버 문의", "emoji": "📩", "prefix": "서버문의",
+        "style": discord.ButtonStyle.primary,
+        "desc": ("서버 이용 중 궁금한 점이나 건의사항을 남겨주세요.\n"
+                 "관리자가 확인 후 순차적으로 답변해 드립니다."),
+    },
+    "report": {
+        "label": "유저 신고 및 분쟁", "emoji": "🚨", "prefix": "신고",
+        "style": discord.ButtonStyle.danger,
+        "desc": ("아래 양식으로 남겨주시면 처리가 빨라집니다.\n\n"
+                 "**신고 대상:** (닉네임/멘션)\n"
+                 "**사유:** (무슨 일이 있었는지)\n"
+                 "**증거:** (스크린샷/링크 첨부)\n\n"
+                 "신고 내용은 관리자만 볼 수 있습니다."),
+    },
+    "match": {
+        "label": "내전 문의", "emoji": "⚔️", "prefix": "내전문의",
+        "style": discord.ButtonStyle.secondary,
+        "desc": ("내전 참여/진행/티어 등록 관련 문의를 남겨주세요.\n"
+                 "내전 관리자가 확인 후 답변해 드립니다."),
+    },
+    "donate": {
+        "label": "후원", "emoji": "💝", "prefix": "후원",
+        "style": discord.ButtonStyle.success,
+        "desc": ("서버 후원에 관심 가져주셔서 감사합니다! 🙏\n"
+                 "후원 방법과 혜택을 안내해 드릴게요. 잠시만 기다려주세요."),
+    },
+}
+
 # ───────────────── Views ─────────────────
 
 class ClosedTicketView(discord.ui.View):
@@ -67,58 +99,87 @@ class OpenTicketView(discord.ui.View):
         embed = discord.Embed(title="🔒 티켓이 닫혔습니다", description="관리자가 이 티켓을 삭제하거나 다시 열 수 있습니다.", color=discord.Color.orange())
         await interaction.response.edit_message(embed=embed, view=ClosedTicketView())
 
+async def _open_ticket(interaction: discord.Interaction, cat_key: str):
+    """카테고리별 비공개 티켓 채널을 생성합니다."""
+    cat = TICKET_CATEGORIES[cat_key]
+    await interaction.response.defer(ephemeral=True)
+
+    guild = interaction.guild
+    user = interaction.user
+    channel_name = f"{cat['prefix']}-{user.name}"
+
+    existing_channel = discord.utils.get(guild.text_channels, name=channel_name.lower())
+    if existing_channel:
+        await interaction.followup.send(
+            f"이미 본인의 **{cat['label']}** 채널({existing_channel.mention})이 존재합니다.", ephemeral=True)
+        return
+
+    # 기본 권한 설정
+    overwrites = {
+        guild.default_role: discord.PermissionOverwrite(view_channel=False),
+        user: discord.PermissionOverwrite(view_channel=True, send_messages=True),
+        guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True)
+    }
+
+    # 서포트 역할에게 채널 보기 및 메시지 보내기 권한 부여
+    support_role = guild.get_role(1522224219138691184)
+    if support_role:
+        overwrites[support_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+
+    # 관리자 권한을 가진 모든 역할에게 권한 부여
+    for role in guild.roles:
+        if role.permissions.administrator:
+            overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+
+    try:
+        new_channel = await guild.create_text_channel(
+            name=channel_name,
+            overwrites=overwrites,
+            category=interaction.channel.category,
+            topic=f"{TICKET_CREATOR_ID}:{user.id}",
+            reason=f"{user.name}님의 {cat['label']} 티켓 생성"
+        )
+
+        embed = discord.Embed(
+            title=f"{cat['emoji']} {cat['label']}",
+            description=(f"안녕하세요, {user.mention}님!\n\n"
+                         f"{cat['desc']}\n\n"
+                         "문의가 해결되면 아래 **티켓 닫기** 버튼을 눌러주세요."),
+            color=discord.Color.green())
+        await new_channel.send(embed=embed, view=OpenTicketView())
+
+        await interaction.followup.send(f"✅ {new_channel.mention} 채널이 생성되었습니다.", ephemeral=True)
+    except discord.Forbidden:
+        await interaction.followup.send("⚠️ 채널 생성에 실패했습니다. 봇이 '채널 관리' 권한을 가지고 있는지 확인해주세요.", ephemeral=True)
+    except Exception as e:
+        await interaction.followup.send(f"⚠️ 알 수 없는 오류로 채널 생성에 실패했습니다: {e}", ephemeral=True)
+
+
 class TicketSystemView(discord.ui.View):
-    """1:1 문의 채널 생성 버튼이 있는 초기 View"""
+    """카테고리별 티켓 생성 버튼 패널 View"""
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="1:1 문의 채널 생성", style=discord.ButtonStyle.success, custom_id="create_ticket_button")
-    async def create_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True)
+    # 서버 문의 — 기존 패널 버튼(custom_id 유지)도 이 카테고리로 동작
+    @discord.ui.button(label="서버 문의", emoji="📩", style=discord.ButtonStyle.primary,
+                       custom_id="create_ticket_button")
+    async def server_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await _open_ticket(interaction, "server")
 
-        guild = interaction.guild
-        user = interaction.user
-        channel_name = f"문의-{user.name}"
+    @discord.ui.button(label="유저 신고 및 분쟁", emoji="🚨", style=discord.ButtonStyle.danger,
+                       custom_id="ticket_report")
+    async def report_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await _open_ticket(interaction, "report")
 
-        existing_channel = discord.utils.get(guild.text_channels, name=channel_name)
-        if existing_channel:
-            await interaction.followup.send(f"이미 본인의 문의 채널({existing_channel.mention})이 존재합니다.", ephemeral=True)
-            return
+    @discord.ui.button(label="내전 문의", emoji="⚔️", style=discord.ButtonStyle.secondary,
+                       custom_id="ticket_match")
+    async def match_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await _open_ticket(interaction, "match")
 
-        # 기본 권한 설정
-        overwrites = {
-            guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            user: discord.PermissionOverwrite(view_channel=True, send_messages=True),
-            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True)
-        }
-
-        # 특정 역할(1522224219138691184)에게 채널 보기 및 메시지 보내기 권한 부여 추가
-        support_role = guild.get_role(1522224219138691184)
-        if support_role:
-            overwrites[support_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
-
-        # 관리자 권한을 가진 모든 역할에게 권한 부여
-        for role in guild.roles:
-            if role.permissions.administrator:
-                overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
-
-        try:
-            new_channel = await guild.create_text_channel(
-                name=channel_name,
-                overwrites=overwrites,
-                category=interaction.channel.category,
-                topic=f"{TICKET_CREATOR_ID}:{user.id}",
-                reason=f"{user.name}님의 1:1 문의 채널 생성"
-            )
-
-            embed = discord.Embed(title="✉️ 1:1 문의", description=f"안녕하세요, {user.mention}님! 문의 내용을 남겨주시면 관리자가 확인 후 답변해 드립니다.\n\n문의가 해결되면 아래 '티켓 닫기' 버튼을 눌러주세요.", color=discord.Color.green())
-            await new_channel.send(embed=embed, view=OpenTicketView())
-
-            await interaction.followup.send(f"✅ {new_channel.mention} 채널이 생성되었습니다.", ephemeral=True)
-        except discord.Forbidden:
-            await interaction.followup.send("⚠️ 채널 생성에 실패했습니다. 봇이 '채널 관리' 권한을 가지고 있는지 확인해주세요.", ephemeral=True)
-        except Exception as e:
-            await interaction.followup.send(f"⚠️ 알 수 없는 오류로 채널 생성에 실패했습니다: {e}", ephemeral=True)
+    @discord.ui.button(label="후원", emoji="💝", style=discord.ButtonStyle.success,
+                       custom_id="ticket_donate")
+    async def donate_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await _open_ticket(interaction, "donate")
 
 # ───────────────── Cog ─────────────────
 
@@ -136,8 +197,13 @@ class TicketSystemCog(commands.Cog):
     @app_commands.default_permissions(manage_guild=True)
     async def create_ticket_panel(self, interaction: discord.Interaction, channel: discord.TextChannel):
         embed = discord.Embed(
-            title="✉️ 1:1 문의",
-            description="아래 버튼을 눌러 관리자와 대화할 수 있는 비공개 채널을 생성하세요.",
+            title="🎫 문의 티켓",
+            description=("아래 버튼을 눌러 **비공개 문의 채널**을 생성하세요.\n"
+                         "관리자만 볼 수 있으며, 문의 종류에 맞는 버튼을 선택해주세요.\n\n"
+                         "📩 **서버 문의** — 서버 이용 관련 일반 문의/건의\n"
+                         "🚨 **유저 신고 및 분쟁** — 신고 대상·사유·증거 첨부\n"
+                         "⚔️ **내전 문의** — 내전 참여/진행/티어 관련\n"
+                         "💝 **후원** — 서버 후원 안내"),
             color=discord.Color.blue()
         )
         try:
