@@ -32,16 +32,16 @@ VAL_TIERS = [
 ]
 
 _MAP = {"lol": LOL_TIERS, "val": VAL_TIERS}
-UNRANKED = ("언랭크", (120, 125, 140))
+UNRANKED = ("언랭크", (120, 125, 140), "U")
 
 
 def get_tier_info(member, game: str):
-    """보유한 티어 역할 중 가장 높은 (한글이름, 색상) 을 반환. 없으면 언랭크."""
+    """보유한 티어 역할 중 가장 높은 (한글이름, 색상, 약자) 를 반환. 없으면 언랭크."""
     table = _MAP.get(game)
     if not table or member is None:
         return UNRANKED
     role_ids = {r.id for r in getattr(member, "roles", [])}
-    for rid, _letter, korean, color in table:
+    for rid, letter, korean, color in table:
         if rid in role_ids:
-            return (korean, color)
+            return (korean, color, letter)
     return UNRANKED

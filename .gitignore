@@ -222,3 +222,6 @@ config.ini
 *.db
 stats.json
 log_queue.db
+
+# 티어 아이콘 런타임 캐시
+assets/tiers/

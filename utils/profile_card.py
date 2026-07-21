@@ -19,6 +19,7 @@ from PIL import Image, ImageDraw, ImageFilter
 
 from utils.stats import (get_xp, get_voice_xp, get_points, get_rank, level_from_xp)
 from utils.tiers import get_tier_info
+from utils.tier_assets import get_tier_icon
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TITLE_FONT = os.path.join(BASE_DIR, "font.ttf")     # 나눔스퀘어라운드 Bold
@@ -102,8 +103,9 @@ def _panel(img, draw, x, y, w, h, accent):
 
 def generate_profile_image(avatar_bytes, name, chat_xp, voice_xp, points,
                            chat_rank=None, voice_rank=None,
-                           lol_tier=("언랭크", (120, 125, 140)),
-                           val_tier=("언랭크", (120, 125, 140))):
+                           lol_tier=("언랭크", (120, 125, 140), None),
+                           val_tier=("언랭크", (120, 125, 140), None)):
+    """lol_tier/val_tier = (한글 티어명, 대표색, 아이콘 파일 경로 또는 None)."""
     # ---------- 배경 ----------
     try:
         bg = Image.open(BG_PATH).convert("RGBA")
@@ -209,13 +211,29 @@ def generate_profile_image(avatar_bytes, name, chat_xp, voice_xp, points,
                   stroke_width=1, stroke_fill=BLACK)
 
     def tier_panel(idx, label, tier):
-        tname, tcolor = tier
+        tname, tcolor, icon_path = (tier + (None,))[:3]
         x = x0 + idx * (PW + GAP)
         _panel(img, draw, x, PY, PW, PH, tcolor)
         cx = x + PW // 2
         draw.text((cx, PY + 46), label, font=f_ptitle, fill=WHITE, anchor="mm",
                   stroke_width=2, stroke_fill=BLACK)
-        _tier_badge(draw, cx, PY + 152, 62, tcolor)
+        pasted = False
+        if icon_path:
+            try:
+                icon = Image.open(icon_path).convert("RGBA")
+                icon.thumbnail((150, 150), Image.LANCZOS)
+                # 은은한 글로우 후 중앙 부착
+                halo = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+                hd = ImageDraw.Draw(halo)
+                hd.ellipse([cx - 72, PY + 152 - 72, cx + 72, PY + 152 + 72],
+                           fill=tuple(list(tcolor) + [70]))
+                img.alpha_composite(halo.filter(ImageFilter.GaussianBlur(18)))
+                img.alpha_composite(icon, (cx - icon.width // 2, PY + 152 - icon.height // 2))
+                pasted = True
+            except Exception:
+                pasted = False
+        if not pasted:
+            _tier_badge(draw, cx, PY + 152, 62, tcolor)
         draw.text((cx, PY + 252), tname, font=f_tname, fill=tcolor, anchor="mm",
                   stroke_width=2, stroke_fill=BLACK)
 
@@ -261,8 +279,11 @@ async def build_profile_card(target) -> discord.File:
     points = await get_points(target.id)
     chat_rank = await get_rank(target.id, "경험치")
     voice_rank = await get_rank(target.id, "음성경험치")
-    lol_tier = get_tier_info(target, "lol")
-    val_tier = get_tier_info(target, "val")
+    # (한글명, 색, 약자) → 실제 티어 이미지 다운로드/캐시 후 (한글명, 색, 아이콘경로)
+    ln, lc, ll = get_tier_info(target, "lol")
+    vn, vc, vl = get_tier_info(target, "val")
+    lol_tier = (ln, lc, await get_tier_icon("lol", ll))
+    val_tier = (vn, vc, await get_tier_icon("val", vl))
 
     avatar_bytes = b""
     if target.display_avatar:
