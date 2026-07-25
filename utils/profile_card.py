@@ -208,11 +208,13 @@ def generate_profile_image(avatar_bytes, name, chat_xp, voice_xp, points,
               stroke_width=2, stroke_fill=(50, 25, 95))
 
     # ---------- 경험치 바 ----------
-    BX0, BX1 = 56, 1144
-    BW = BX1 - BX0
-    # 가독성을 위한 배경 패널
-    draw.rounded_rectangle([32, 254, 1168, 484], radius=24, fill=(14, 8, 34, 190),
+    # 좌우 끝을 하단 티어 패널(SX0~SX1)과 동일하게 맞춘다.
+    SX0, SX1 = 56, 1144
+    draw.rounded_rectangle([SX0, 254, SX1, 484], radius=24, fill=(14, 8, 34, 190),
                            outline=(150, 110, 230, 150), width=2)
+    # 바/텍스트는 패널 안쪽 여백을 두고 배치
+    BX0, BX1 = SX0 + 24, SX1 - 24
+    BW = BX1 - BX0
     f_lbl = _font(TITLE_FONT, 29)
     f_lv = _font(TITLE_FONT, 33)
     f_rank = _font(TITLE_FONT, 22)
@@ -244,7 +246,7 @@ def generate_profile_image(avatar_bytes, name, chat_xp, voice_xp, points,
     # ---------- 티어 패널 (하단) ----------
     TY0, TH = 494, 170
     GAP = 20
-    PWID = (BW - GAP) // 2
+    PWID = (SX1 - SX0 - GAP) // 2
     f_tlabel = _font(UI_FONT, 24)
     f_tname = _font(TITLE_FONT, 40)
 
@@ -278,8 +280,8 @@ def generate_profile_image(avatar_bytes, name, chat_xp, voice_xp, points,
         draw.text((tx, TY0 + 80), tname, font=f_tn, fill=tcolor,
                   stroke_width=2, stroke_fill=BLACK)
 
-    tier_panel(BX0, "롤 솔랭 티어", lol_tier)
-    tier_panel(BX0 + PWID + GAP, "발로 경쟁 티어", val_tier)
+    tier_panel(SX0, "롤 솔랭 티어", lol_tier)
+    tier_panel(SX0 + PWID + GAP, "발로 경쟁 티어", val_tier)
 
     out = io.BytesIO()
     img.convert("RGB").save(out, "PNG")
