@@ -26,14 +26,30 @@ TICKET_CATEGORIES = {
     "match": {
         "label": "내전 문의", "emoji": "⚔️", "prefix": "내전문의",
         "style": discord.ButtonStyle.secondary,
-        "desc": ("내전 참여/진행/티어 등록 관련 문의를 남겨주세요.\n"
+        "desc": ("내전 참여/진행 관련 문의를 남겨주세요.\n"
                  "내전 관리자가 확인 후 답변해 드립니다."),
+    },
+    "tier": {
+        "label": "티어 인증", "emoji": "🏅", "prefix": "티어인증",
+        "style": discord.ButtonStyle.primary,
+        "desc": ("티어 역할을 받으려면 아래 정보를 남겨주세요.\n\n"
+                 "**게임:** 리그오브레전드 / 발로란트\n"
+                 "**라이엇 ID:** 닉네임#태그\n"
+                 "**현재 티어:** (예: 다이아몬드 IV)\n"
+                 "**인증 사진:** 게임 내 티어가 보이는 스크린샷 첨부\n\n"
+                 "티어 조정관이 확인 후 역할을 지급해 드립니다."),
     },
     "donate": {
         "label": "후원", "emoji": "💝", "prefix": "후원",
         "style": discord.ButtonStyle.success,
         "desc": ("서버 후원에 관심 가져주셔서 감사합니다! 🙏\n"
                  "후원 방법과 혜택을 안내해 드릴게요. 잠시만 기다려주세요."),
+    },
+    "etc": {
+        "label": "기타 문의", "emoji": "💬", "prefix": "기타문의",
+        "style": discord.ButtonStyle.secondary,
+        "desc": ("위 항목에 해당하지 않는 문의를 자유롭게 남겨주세요.\n"
+                 "관리자가 확인 후 답변해 드립니다."),
     },
 }
 
@@ -160,26 +176,38 @@ class TicketSystemView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
+    # --- 1행 ---
     # 서버 문의 — 기존 패널 버튼(custom_id 유지)도 이 카테고리로 동작
     @discord.ui.button(label="서버 문의", emoji="📩", style=discord.ButtonStyle.primary,
-                       custom_id="create_ticket_button")
+                       custom_id="create_ticket_button", row=0)
     async def server_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         await _open_ticket(interaction, "server")
 
     @discord.ui.button(label="유저 신고 및 분쟁", emoji="🚨", style=discord.ButtonStyle.danger,
-                       custom_id="ticket_report")
+                       custom_id="ticket_report", row=0)
     async def report_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         await _open_ticket(interaction, "report")
 
     @discord.ui.button(label="내전 문의", emoji="⚔️", style=discord.ButtonStyle.secondary,
-                       custom_id="ticket_match")
+                       custom_id="ticket_match", row=0)
     async def match_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         await _open_ticket(interaction, "match")
 
+    # --- 2행 ---
+    @discord.ui.button(label="티어 인증", emoji="🏅", style=discord.ButtonStyle.primary,
+                       custom_id="ticket_tier", row=1)
+    async def tier_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await _open_ticket(interaction, "tier")
+
     @discord.ui.button(label="후원", emoji="💝", style=discord.ButtonStyle.success,
-                       custom_id="ticket_donate")
+                       custom_id="ticket_donate", row=1)
     async def donate_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         await _open_ticket(interaction, "donate")
+
+    @discord.ui.button(label="기타 문의", emoji="💬", style=discord.ButtonStyle.secondary,
+                       custom_id="ticket_etc", row=1)
+    async def etc_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await _open_ticket(interaction, "etc")
 
 # ───────────────── Cog ─────────────────
 
@@ -202,8 +230,10 @@ class TicketSystemCog(commands.Cog):
                          "관리자만 볼 수 있으며, 문의 종류에 맞는 버튼을 선택해주세요.\n\n"
                          "📩 **서버 문의** — 서버 이용 관련 일반 문의/건의\n"
                          "🚨 **유저 신고 및 분쟁** — 신고 대상·사유·증거 첨부\n"
-                         "⚔️ **내전 문의** — 내전 참여/진행/티어 관련\n"
-                         "💝 **후원** — 서버 후원 안내"),
+                         "⚔️ **내전 문의** — 내전 참여/진행 관련\n"
+                         "🏅 **티어 인증** — 티어 역할 지급 신청 (스크린샷 첨부)\n"
+                         "💝 **후원** — 서버 후원 안내\n"
+                         "💬 **기타 문의** — 위에 해당하지 않는 문의"),
             color=discord.Color.blue()
         )
         try:
