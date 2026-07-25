@@ -5,6 +5,10 @@ import asyncio
 
 TICKET_CREATOR_ID = "ticket_creator_id"
 
+# 서버 커스텀 이모지
+EMOJI_LOL = "<:Arena_GAME_Kind_0:1529940671836983517>"   # 리그오브레전드
+EMOJI_VAL = "<:Arena_GAME_Kind_1:1529940981246332990>"   # 발로란트
+
 # ───────────────── 티켓 카테고리 ─────────────────
 # key: (버튼 라벨, 이모지, 채널 접두어, 버튼 스타일, 안내 문구)
 TICKET_CATEGORIES = {
@@ -25,13 +29,13 @@ TICKET_CATEGORIES = {
     },
     "match": {
         "label": "내전 문의", "emoji": "⚔️", "prefix": "내전문의",
-        "style": discord.ButtonStyle.secondary,
+        "style": discord.ButtonStyle.primary,
         "desc": ("내전 참여/진행 관련 문의를 남겨주세요.\n"
                  "내전 관리자가 확인 후 답변해 드립니다."),
     },
     "tier_lol": {
-        "label": "롤 티어 인증", "emoji": "🏅", "prefix": "롤티어인증",
-        "style": discord.ButtonStyle.primary,
+        "label": "롤 티어 인증", "emoji": EMOJI_LOL, "prefix": "롤티어인증",
+        "style": discord.ButtonStyle.secondary,
         "manager_role": 1526678260182683668,   # 롤 티어 조정관
         "desc": ("**리그오브레전드** 티어 역할 신청입니다. 아래 정보를 남겨주세요.\n\n"
                  "**라이엇 ID:** 닉네임#태그\n"
@@ -40,8 +44,8 @@ TICKET_CATEGORIES = {
                  "롤 티어 조정관이 확인 후 역할을 지급해 드립니다."),
     },
     "tier_val": {
-        "label": "발로란트 티어 인증", "emoji": "🎯", "prefix": "발로티어인증",
-        "style": discord.ButtonStyle.danger,
+        "label": "발로 티어 인증", "emoji": EMOJI_VAL, "prefix": "발로티어인증",
+        "style": discord.ButtonStyle.secondary,
         "manager_role": 1527320282824441856,   # 발로란트 티어 조정관
         "desc": ("**발로란트** 티어 역할 신청입니다. 아래 정보를 남겨주세요.\n\n"
                  "**라이엇 ID:** 닉네임#태그\n"
@@ -57,7 +61,7 @@ TICKET_CATEGORIES = {
     },
     "etc": {
         "label": "기타 문의", "emoji": "💬", "prefix": "기타문의",
-        "style": discord.ButtonStyle.secondary,
+        "style": discord.ButtonStyle.success,
         "desc": ("위 항목에 해당하지 않는 문의를 자유롭게 남겨주세요.\n"
                  "관리자가 확인 후 답변해 드립니다."),
     },
@@ -188,66 +192,50 @@ async def _open_ticket(interaction: discord.Interaction, cat_key: str):
         await interaction.followup.send(f"⚠️ 알 수 없는 오류로 채널 생성에 실패했습니다: {e}", ephemeral=True)
 
 
-class TierChoiceView(discord.ui.View):
-    """티어 인증 — 롤/발로란트 선택 (개인에게만 보이는 임시 View)"""
-    def __init__(self):
-        super().__init__(timeout=180)
-
-    @discord.ui.button(label="리그오브레전드", emoji="🏅", style=discord.ButtonStyle.primary)
-    async def lol(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.stop()
-        await _open_ticket(interaction, "tier_lol")
-
-    @discord.ui.button(label="발로란트", emoji="🎯", style=discord.ButtonStyle.danger)
-    async def val(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.stop()
-        await _open_ticket(interaction, "tier_val")
-
-
 class TicketSystemView(discord.ui.View):
     """카테고리별 티켓 생성 버튼 패널 View"""
     def __init__(self):
         super().__init__(timeout=None)
 
-    # --- 1행 ---
+    # --- 1행 (파랑) ---
     # 서버 문의 — 기존 패널 버튼(custom_id 유지)도 이 카테고리로 동작
     @discord.ui.button(label="서버 문의", emoji="📩", style=discord.ButtonStyle.primary,
                        custom_id="create_ticket_button", row=0)
     async def server_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         await _open_ticket(interaction, "server")
 
-    @discord.ui.button(label="유저 신고 및 분쟁", emoji="🚨", style=discord.ButtonStyle.danger,
-                       custom_id="ticket_report", row=0)
-    async def report_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await _open_ticket(interaction, "report")
-
-    @discord.ui.button(label="내전 문의", emoji="⚔️", style=discord.ButtonStyle.secondary,
+    @discord.ui.button(label="내전 문의", emoji="⚔️", style=discord.ButtonStyle.primary,
                        custom_id="ticket_match", row=0)
     async def match_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         await _open_ticket(interaction, "match")
 
-    # --- 2행 ---
-    @discord.ui.button(label="티어 인증", emoji="🏅", style=discord.ButtonStyle.primary,
-                       custom_id="ticket_tier", row=1)
-    async def tier_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # 어떤 게임의 티어 인증인지 다시 선택받는다.
-        embed = discord.Embed(
-            title="🏅 티어 인증",
-            description=("어떤 게임의 티어를 인증하시겠어요?\n"
-                         "선택하면 해당 조정관만 볼 수 있는 채널이 생성됩니다."),
-            color=discord.Color.blurple())
-        await interaction.response.send_message(embed=embed, view=TierChoiceView(),
-                                                ephemeral=True)
+    # --- 2행 (회색) ---
+    @discord.ui.button(label="롤 티어 인증", emoji=EMOJI_LOL, style=discord.ButtonStyle.secondary,
+                       custom_id="ticket_tier_lol", row=1)
+    async def tier_lol_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await _open_ticket(interaction, "tier_lol")
 
+    @discord.ui.button(label="발로 티어 인증", emoji=EMOJI_VAL, style=discord.ButtonStyle.secondary,
+                       custom_id="ticket_tier_val", row=1)
+    async def tier_val_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await _open_ticket(interaction, "tier_val")
+
+    # --- 3행 (초록) ---
     @discord.ui.button(label="후원", emoji="💝", style=discord.ButtonStyle.success,
-                       custom_id="ticket_donate", row=1)
+                       custom_id="ticket_donate", row=2)
     async def donate_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         await _open_ticket(interaction, "donate")
 
-    @discord.ui.button(label="기타 문의", emoji="💬", style=discord.ButtonStyle.secondary,
-                       custom_id="ticket_etc", row=1)
+    @discord.ui.button(label="기타 문의", emoji="💬", style=discord.ButtonStyle.success,
+                       custom_id="ticket_etc", row=2)
     async def etc_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         await _open_ticket(interaction, "etc")
+
+    # --- 4행 (빨강) ---
+    @discord.ui.button(label="유저 신고 및 분쟁", emoji="🚨", style=discord.ButtonStyle.danger,
+                       custom_id="ticket_report", row=3)
+    async def report_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await _open_ticket(interaction, "report")
 
 # ───────────────── Cog ─────────────────
 
@@ -269,11 +257,12 @@ class TicketSystemCog(commands.Cog):
             description=("아래 버튼을 눌러 **비공개 문의 채널**을 생성하세요.\n"
                          "관리자만 볼 수 있으며, 문의 종류에 맞는 버튼을 선택해주세요.\n\n"
                          "📩 **서버 문의** — 서버 이용 관련 일반 문의/건의\n"
-                         "🚨 **유저 신고 및 분쟁** — 신고 대상·사유·증거 첨부\n"
                          "⚔️ **내전 문의** — 내전 참여/진행 관련\n"
-                         "🏅 **티어 인증** — 롤/발로 선택 후 티어 역할 신청 (스크린샷 첨부)\n"
+                         f"{EMOJI_LOL} **롤 티어 인증** — 롤 티어 역할 신청 (스크린샷 첨부)\n"
+                         f"{EMOJI_VAL} **발로 티어 인증** — 발로 티어 역할 신청 (스크린샷 첨부)\n"
                          "💝 **후원** — 서버 후원 안내\n"
-                         "💬 **기타 문의** — 위에 해당하지 않는 문의"),
+                         "💬 **기타 문의** — 위에 해당하지 않는 문의\n"
+                         "🚨 **유저 신고 및 분쟁** — 신고 대상·사유·증거 첨부"),
             color=discord.Color.blue()
         )
         try:
