@@ -145,7 +145,7 @@ def generate_profile_image(avatar_bytes, name, chat_xp, voice_xp, points,
                            outline=(90, 60, 160, 120), width=1)
 
     # ---------- 아바타 ----------
-    AX, AY, AR = 148, 152, 90
+    AX, AY, AR = 148, 140, 90
     glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     ImageDraw.Draw(glow).ellipse(
         [AX - AR - 16, AY - AR - 16, AX + AR + 16, AY + AR + 16],
@@ -172,20 +172,20 @@ def generate_profile_image(avatar_bytes, name, chat_xp, voice_xp, points,
     # ---------- 헤더 텍스트 ----------
     TX = 272  # 텍스트 좌측 기준선
     soft = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    ImageDraw.Draw(soft).rounded_rectangle([TX - 30, 62, 1160, 250], radius=36,
+    ImageDraw.Draw(soft).rounded_rectangle([TX - 30, 50, 1160, 238], radius=36,
                                            fill=(10, 5, 28, 135))
     img.alpha_composite(soft.filter(ImageFilter.GaussianBlur(24)))
 
-    _spaced_text(draw, TX, 78, "GAME ARENA", _font(UI_FONT, 26), LAVENDER,
+    _spaced_text(draw, TX, 66, "GAME ARENA", _font(UI_FONT, 26), LAVENDER,
                  spacing=10, stroke=1, stroke_fill=BLACK)
     f_name = _fit_font(draw, name, TITLE_FONT, 560, 76, 34)
-    draw.text((TX, 118), name, font=f_name, fill=WHITE,
+    draw.text((TX, 106), name, font=f_name, fill=WHITE,
               stroke_width=4, stroke_fill=(50, 25, 95))
-    _spaced_text(draw, TX, 205, "PLAY TOGETHER, WIN TOGETHER.", _font(UI_FONT, 20),
+    _spaced_text(draw, TX, 193, "PLAY TOGETHER, WIN TOGETHER.", _font(UI_FONT, 20),
                  LAVENDER_DIM, spacing=1.5, stroke=1, stroke_fill=BLACK)
 
     # 보유 포인트 (헤더 우측 칩)
-    PX0, PY0, PX1, PY1 = 858, 92, 1160, 180
+    PX0, PY0, PX1, PY1 = 858, 80, 1160, 168
     draw.rounded_rectangle([PX0, PY0, PX1, PY1], radius=22, fill=PANEL_BG,
                            outline=(150, 110, 230, 200), width=2)
     gx, gy = PX0 + 44, (PY0 + PY1) // 2
