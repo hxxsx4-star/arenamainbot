@@ -29,15 +29,25 @@ TICKET_CATEGORIES = {
         "desc": ("내전 참여/진행 관련 문의를 남겨주세요.\n"
                  "내전 관리자가 확인 후 답변해 드립니다."),
     },
-    "tier": {
-        "label": "티어 인증", "emoji": "🏅", "prefix": "티어인증",
+    "tier_lol": {
+        "label": "롤 티어 인증", "emoji": "🏅", "prefix": "롤티어인증",
         "style": discord.ButtonStyle.primary,
-        "desc": ("티어 역할을 받으려면 아래 정보를 남겨주세요.\n\n"
-                 "**게임:** 리그오브레전드 / 발로란트\n"
+        "manager_role": 1526678260182683668,   # 롤 티어 조정관
+        "desc": ("**리그오브레전드** 티어 역할 신청입니다. 아래 정보를 남겨주세요.\n\n"
                  "**라이엇 ID:** 닉네임#태그\n"
                  "**현재 티어:** (예: 다이아몬드 IV)\n"
-                 "**인증 사진:** 게임 내 티어가 보이는 스크린샷 첨부\n\n"
-                 "티어 조정관이 확인 후 역할을 지급해 드립니다."),
+                 "**인증 사진:** 게임 내 프로필/랭크가 보이는 스크린샷 첨부\n\n"
+                 "롤 티어 조정관이 확인 후 역할을 지급해 드립니다."),
+    },
+    "tier_val": {
+        "label": "발로란트 티어 인증", "emoji": "🎯", "prefix": "발로티어인증",
+        "style": discord.ButtonStyle.danger,
+        "manager_role": 1527320282824441856,   # 발로란트 티어 조정관
+        "desc": ("**발로란트** 티어 역할 신청입니다. 아래 정보를 남겨주세요.\n\n"
+                 "**라이엇 ID:** 닉네임#태그\n"
+                 "**현재 티어:** (예: 다이아몬드 2)\n"
+                 "**인증 사진:** 경쟁전 프로필/랭크가 보이는 스크린샷 첨부\n\n"
+                 "발로란트 티어 조정관이 확인 후 역할을 지급해 드립니다."),
     },
     "donate": {
         "label": "후원", "emoji": "💝", "prefix": "후원",
@@ -142,6 +152,11 @@ async def _open_ticket(interaction: discord.Interaction, cat_key: str):
     if support_role:
         overwrites[support_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
 
+    # 카테고리 담당 역할(티어 조정관 등)에게도 권한 부여
+    manager_role = guild.get_role(cat["manager_role"]) if cat.get("manager_role") else None
+    if manager_role:
+        overwrites[manager_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+
     # 관리자 권한을 가진 모든 역할에게 권한 부여
     for role in guild.roles:
         if role.permissions.administrator:
@@ -162,13 +177,31 @@ async def _open_ticket(interaction: discord.Interaction, cat_key: str):
                          f"{cat['desc']}\n\n"
                          "문의가 해결되면 아래 **티켓 닫기** 버튼을 눌러주세요."),
             color=discord.Color.green())
-        await new_channel.send(embed=embed, view=OpenTicketView())
+        # 담당 역할이 있으면 알림이 가도록 멘션
+        content = manager_role.mention if manager_role else None
+        await new_channel.send(content=content, embed=embed, view=OpenTicketView())
 
         await interaction.followup.send(f"✅ {new_channel.mention} 채널이 생성되었습니다.", ephemeral=True)
     except discord.Forbidden:
         await interaction.followup.send("⚠️ 채널 생성에 실패했습니다. 봇이 '채널 관리' 권한을 가지고 있는지 확인해주세요.", ephemeral=True)
     except Exception as e:
         await interaction.followup.send(f"⚠️ 알 수 없는 오류로 채널 생성에 실패했습니다: {e}", ephemeral=True)
+
+
+class TierChoiceView(discord.ui.View):
+    """티어 인증 — 롤/발로란트 선택 (개인에게만 보이는 임시 View)"""
+    def __init__(self):
+        super().__init__(timeout=180)
+
+    @discord.ui.button(label="리그오브레전드", emoji="🏅", style=discord.ButtonStyle.primary)
+    async def lol(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.stop()
+        await _open_ticket(interaction, "tier_lol")
+
+    @discord.ui.button(label="발로란트", emoji="🎯", style=discord.ButtonStyle.danger)
+    async def val(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.stop()
+        await _open_ticket(interaction, "tier_val")
 
 
 class TicketSystemView(discord.ui.View):
@@ -197,7 +230,14 @@ class TicketSystemView(discord.ui.View):
     @discord.ui.button(label="티어 인증", emoji="🏅", style=discord.ButtonStyle.primary,
                        custom_id="ticket_tier", row=1)
     async def tier_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await _open_ticket(interaction, "tier")
+        # 어떤 게임의 티어 인증인지 다시 선택받는다.
+        embed = discord.Embed(
+            title="🏅 티어 인증",
+            description=("어떤 게임의 티어를 인증하시겠어요?\n"
+                         "선택하면 해당 조정관만 볼 수 있는 채널이 생성됩니다."),
+            color=discord.Color.blurple())
+        await interaction.response.send_message(embed=embed, view=TierChoiceView(),
+                                                ephemeral=True)
 
     @discord.ui.button(label="후원", emoji="💝", style=discord.ButtonStyle.success,
                        custom_id="ticket_donate", row=1)
@@ -231,7 +271,7 @@ class TicketSystemCog(commands.Cog):
                          "📩 **서버 문의** — 서버 이용 관련 일반 문의/건의\n"
                          "🚨 **유저 신고 및 분쟁** — 신고 대상·사유·증거 첨부\n"
                          "⚔️ **내전 문의** — 내전 참여/진행 관련\n"
-                         "🏅 **티어 인증** — 티어 역할 지급 신청 (스크린샷 첨부)\n"
+                         "🏅 **티어 인증** — 롤/발로 선택 후 티어 역할 신청 (스크린샷 첨부)\n"
                          "💝 **후원** — 서버 후원 안내\n"
                          "💬 **기타 문의** — 위에 해당하지 않는 문의"),
             color=discord.Color.blue()
