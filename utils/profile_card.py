@@ -185,20 +185,27 @@ def generate_profile_image(avatar_bytes, name, chat_xp, voice_xp, points,
                  LAVENDER_DIM, spacing=1.5, stroke=1, stroke_fill=BLACK)
 
     # 보유 포인트 (헤더 우측 칩)
-    PX0, PY0, PX1, PY1 = 880, 96, 1160, 176
+    PX0, PY0, PX1, PY1 = 858, 92, 1160, 180
     draw.rounded_rectangle([PX0, PY0, PX1, PY1], radius=22, fill=PANEL_BG,
                            outline=(150, 110, 230, 200), width=2)
-    gx, gy = PX0 + 46, (PY0 + PY1) // 2
-    _diamond(draw, gx, gy, 26, fill=(60, 34, 110), outline=PURPLE, width=3)
-    _diamond(draw, gx, gy, 14, fill=(150, 105, 250), outline=LAVENDER, width=2)
+    gx, gy = PX0 + 44, (PY0 + PY1) // 2
+    _diamond(draw, gx, gy, 25, fill=(60, 34, 110), outline=PURPLE, width=3)
+    _diamond(draw, gx, gy, 13, fill=(150, 105, 250), outline=LAVENDER, width=2)
     _diamond(draw, gx, gy, 5, fill=WHITE)
-    draw.text((gx + 34, PY0 + 16), "보유 포인트", font=_font(UI_FONT, 21),
+
+    TXT_L, TXT_R = gx + 32, PX1 - 22       # 텍스트 영역 (우측 여백 확보)
+    draw.text((TXT_L, PY0 + 10), "보유 포인트", font=_font(UI_FONT, 21),
               fill=LAVENDER_DIM, stroke_width=1, stroke_fill=BLACK)
-    f_pts = _fit_font(draw, f"{points:,}", TITLE_FONT, 150, 40, 22)
-    draw.text((PX1 - 40, PY0 + 46), f"{points:,}", font=f_pts, fill=WHITE, anchor="ra",
+    f_p = _font(TITLE_FONT, 24)
+    p_w = draw.textlength("P", font=f_p)
+    pts_txt = f"{points:,}"
+    # 숫자가 길어도 'P' 와 우측 여백을 침범하지 않도록 폰트 자동 축소
+    f_pts = _fit_font(draw, pts_txt, TITLE_FONT, TXT_R - TXT_L - p_w - 10, 40, 20)
+    num_cy = PY0 + 60
+    draw.text((TXT_R, num_cy + 5), "P", font=f_p, fill=PURPLE, anchor="rm",
+              stroke_width=1, stroke_fill=BLACK)
+    draw.text((TXT_R - p_w - 8, num_cy), pts_txt, font=f_pts, fill=WHITE, anchor="rm",
               stroke_width=2, stroke_fill=(50, 25, 95))
-    draw.text((PX1 - 34, PY0 + 52), "P", font=_font(TITLE_FONT, 24), fill=PURPLE,
-              anchor="la", stroke_width=1, stroke_fill=BLACK)
 
     # ---------- 경험치 바 ----------
     BX0, BX1 = 56, 1144
