@@ -42,6 +42,7 @@ class MainBot(commands.Bot):
             "cogs.moderation",     # 경고/차감 (로그 → 공유 큐)
             "cogs.ticket_system",  # 티켓
             "cogs.help_kor",       # 도움말
+            "cogs.patchnotes",     # 롤/발로란트 패치노트 자동 게시
             "cogs.voice_rewards",  # 통화방 포인트 지급 (로그는 로그봇이 담당)
         ]
         for cog in cogs_to_load:
