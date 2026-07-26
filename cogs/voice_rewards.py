@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands, tasks
 
-from utils.stats import add_points, get_points, add_voice_xp, bump_activity, format_num
+from utils.stats import add_points, get_points, add_voice_xp, bump_activity, bump_mission, format_num
 from utils.logs import VOICE_POINT_LOG_CH, enqueue_embed, is_target_guild
 
 POINT_PER_MIN = 1      # 통화방 1분당 지급 포인트
@@ -52,6 +52,7 @@ class VoiceRewardsCog(commands.Cog):
                     await add_points(member.id, POINT_PER_MIN)
                     old_lv, new_lv, _ = await add_voice_xp(member.id, VOICE_XP_PER_MIN)
                     await bump_activity(member.id, "voice")
+                    await bump_mission(member.id, "voice")   # 일일 미션(통화방 이용)
                     if new_lv > old_lv:
                         await self._grant_voice_roles(member, new_lv)
 

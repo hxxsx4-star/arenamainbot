@@ -225,7 +225,8 @@ async def get_level_ranking():
 # ---------- 일일 미션 ----------
 DAILY_MISSIONS = [
     {"key": "chat", "desc": "채팅으로 활동하기 (10회)", "goal": 10, "reward": 50},
-    {"key": "game", "desc": "미니게임 3판 플레이", "goal": 3, "reward": 50},
+    # 도박성 미니게임을 없애면서, 달성 불가가 된 "game" 미션을 통화방 이용으로 대체.
+    {"key": "voice", "desc": "통화방 10분 이용", "goal": 10, "reward": 50},
     {"key": "attend", "desc": "출석 체크하기", "goal": 1, "reward": 30},
 ]
 
