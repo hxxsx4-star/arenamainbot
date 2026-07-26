@@ -8,6 +8,7 @@ import urllib.request
 import discord
 from discord.ext import commands
 
+from utils.cmdexport import export_commands
 from utils.logs import ERROR_LOG_CH, init_log_queue
 
 # --- 설정 로드 ---
@@ -43,6 +44,7 @@ class MainBot(commands.Bot):
             "cogs.ticket_system",  # 티켓
             "cogs.help_kor",       # 도움말
             "cogs.patchnotes",     # 롤/발로란트 패치노트 자동 게시
+            "cogs.botguide",       # 봇공지 (사용법 자동갱신 + 봇 패치내역)
             "cogs.voice_rewards",  # 통화방 포인트 지급 (로그는 로그봇이 담당)
         ]
         for cog in cogs_to_load:
@@ -61,6 +63,8 @@ class MainBot(commands.Bot):
             print(f"✅ {len(synced)}개의 슬래시 커맨드를 동기화했습니다!")
         except Exception as e:
             print(f"❌ 슬래시 커맨드 동기화 실패: {e}")
+        n = export_commands(self, "mainbot", "메인봇")
+        print(f"📖 명령어 {n}개를 봇공지용으로 내보냈습니다.")
 
     async def on_error(self, event_method, *args, **kwargs):
         # 이벤트 핸들러(on_message 등) 내부에서 발생한 예외는 봇을 죽이지 않고
