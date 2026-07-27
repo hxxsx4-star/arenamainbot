@@ -40,6 +40,7 @@ class MainBot(commands.Bot):
             "cogs.leveling",       # 레벨/경험치 (채팅 활동)
             "cogs.missions",       # 일일 미션
             "cogs.onboarding",     # 입장 시 닉네임 등록 안내 DM
+            "cogs.nickname_gate",  # 닉네임 등록 채널 [나이] [닉네임] 형식 인식 + 역할 지급
             "cogs.moderation",     # 경고/차감 (로그 → 공유 큐)
             "cogs.ticket_system",  # 티켓
             "cogs.help_kor",       # 도움말

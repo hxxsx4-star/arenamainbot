@@ -8,6 +8,7 @@
 - `cogs/moderation.py` : 경고/차감 (로그 → 공유 큐)
 - `cogs/ticket_system.py`, `cogs/help_kor.py`, `cogs/admin.py`
 - `cogs/voice_rewards.py` : 통화방 1시간 유지 시 포인트 지급 (로그는 로그봇 담당)
+- `cogs/nickname_gate.py` : 닉네임 등록 채널 — `[나이] [닉네임]` 형식 자동 인식 + 역할 지급, 안내 임베드 자동 갱신
 - 모든 로그는 공유 큐(`utils/logs.py`)에 적재 → **로그봇**이 채널에 기록
 - `profile_bg.png`, `font.ttf` : 프로필 카드 이미지 생성용
 
