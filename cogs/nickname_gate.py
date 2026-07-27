@@ -18,9 +18,8 @@ ONBOARD_CH_ID = 1526595115232133140      # 닉네임 등록 채널
 OK_ROLE_ID = 1526595902788206653         # 형식 통과 → 정회원 역할
 FAIL_ROLE_ID = 1529585636095426590       # 형식 불일치 → 안내 채널만 보이는 격리 역할
 
-# 년생(뒤 두 자리) + 닉네임(한글 1~8글자). 대괄호/슬래시/공백 등 구분자는 있어도
-# 없어도 인정한다 (예: "03 원샷", "[03] [원샷]", "03/원샷" 전부 통과).
-_ENTRY_RE = re.compile(r"^\s*\[?\s*(\d{2})\s*\]?\s*[\/\-]?\s*\[?\s*([가-힣]{1,8})\s*\]?\s*$")
+# 년생(뒤 두 자리) + 닉네임(한글 1~8글자). 대괄호는 인식하지 않는다 (예: "03 원샷").
+_ENTRY_RE = re.compile(r"^\s*(\d{2})\s*[\/\-]?\s*([가-힣]{1,8})\s*$")
 
 SHARED_DIR = os.environ.get("ARENA_SHARED_DIR", "/home/hxxsx4/shared_data")
 STATE_PATH = os.path.join(SHARED_DIR, "nickname_gate_state.json")
@@ -32,8 +31,9 @@ def _guide_embed() -> discord.Embed:
         description=(
             "이 채널에 아래처럼 **나이(년생 뒤 두 자리)** 와 **서버에서 쓸 닉네임**을 적어주세요.\n\n"
             "```\n03 원샷\n```\n"
-            "닉네임은 **한글 1~8글자**만 가능합니다.\n"
-            "형식에 맞으면 서버 닉네임이 자동으로 바뀌고 정회원 역할이 지급돼요.\n"
+            "닉네임은 **한글 1~8글자**만 가능합니다. (대괄호 등 기호는 넣지 마세요)\n"
+            "형식에 맞으면 서버 닉네임이 `03 원샷`처럼 **나이 + 닉네임**으로 자동 반영되고 "
+            "정회원 역할이 지급돼요.\n"
             "형식이 틀리면 이 채널 외 다른 채널이 전부 안 보이게 되니 다시 정확히 작성해주세요."
         ),
         color=discord.Color.blurple(),
@@ -152,16 +152,17 @@ class NicknameGateCog(commands.Cog):
 
         match = _ENTRY_RE.match(message.content)
         if match:
-            await self._handle_pass(message.author, match.group(2))
+            await self._handle_pass(message.author, match.group(1), match.group(2))
         else:
             await self._handle_fail(message.author)
 
         await self._repost_guide(message.channel)
 
-    async def _handle_pass(self, member: discord.Member, nick: str):
+    async def _handle_pass(self, member: discord.Member, age: str, nick: str):
         guild = member.guild
+        combined = f"{age} {nick}"
         try:
-            await member.edit(nick=nick, reason="닉네임 등록 형식 확인")
+            await member.edit(nick=combined, reason="닉네임 등록 형식 확인")
         except discord.Forbidden:
             pass
 
@@ -177,7 +178,7 @@ class NicknameGateCog(commands.Cog):
 
         await send_log_embed(
             self.bot, ROLE_LOG_CH,
-            "✅ 닉네임 등록 완료", f"{member.mention} → 닉네임 `{nick}`",
+            "✅ 닉네임 등록 완료", f"{member.mention} → 닉네임 `{combined}`",
             member, discord.Color.green(), guild=guild)
 
     async def _handle_fail(self, member: discord.Member):
