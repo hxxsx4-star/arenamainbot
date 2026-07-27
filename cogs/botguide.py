@@ -19,7 +19,41 @@ from discord.ext import commands, tasks
 from utils.cmdexport import CMD_DIR
 from utils.logs import is_target_guild
 
-GUIDE_CH = 1530927403575279657          # 봇공지 채널
+GUIDE_CH = 1530927403575279657          # 봇공지 채널 (일반 유저용 사용법 + 패치 내역)
+ADMIN_THREAD = 1530947637627322449      # 관리자용 사용법 스레드
+
+# 함수 본문에서 권한을 검사하는 명령어들. 데코레이터가 없어 자동 수집으로는
+# 관리자 전용인지 알 수 없으므로 여기에 직접 적어둔다.
+ROLE_GATED = {
+    "내전 진행": "누구나 (실행한 사람이 방장이 됩니다)",
+    "닉네임등록": "🔪 롤 티어조정관 / 🔪 발로 티어조정관 (또는 관리자 권한)",
+    "음성세팅": "관리자 권한",
+    "음성세팅목록": "관리자 권한",
+    "음성세팅제거": "관리자 권한",
+}
+
+# 위 중에서 '일반 유저 안내'에는 빼야 하는 것들 (실제로 관리자만 쓸 수 있음)
+ADMIN_ONLY_EXTRA = {"닉네임등록", "음성세팅", "음성세팅목록", "음성세팅제거"}
+
+# 명령어가 아닌, 버튼/역할로 동작하는 관리 기능 안내
+EXTRA_ADMIN_NOTES = [
+    ("⚔️ 내전 결과 확정",
+     "내전 결과 화면의 **1팀/2팀 승리** 버튼은 **💎 내전매니저** 역할 또는 "
+     "**서버 관리 권한**이 있어야 누를 수 있습니다.\n"
+     "방장이라도 결과는 확정할 수 없습니다 — 승리 +140P·패배 +60P·MVP +2,000P 가 "
+     "지급되기 때문에 아무나 판을 만들어 포인트를 찍어내지 못하도록 막아둔 것입니다."),
+    ("🎛️ 음성방 관리",
+     "임시 음성방의 관리 패널(이름/인원/잠금/공개/내보내기/방장위임/삭제)은 "
+     "**그 방의 방장**이나 **관리자 권한** 보유자만 조작할 수 있습니다.\n"
+     "방장이 나가면 남아 있는 사람에게 자동으로 승계됩니다."),
+    ("🏆 e스포츠 예측",
+     "LCK·MSI·월드 챔피언십 경기는 시작 24시간 전에 자동으로 올라가고, "
+     "경기 시작 시각에 자동 마감된 뒤 공식 결과로 자동 정산됩니다.\n"
+     "손댈 일은 없지만 `/e스포츠확인` 으로 즉시 점검할 수 있습니다."),
+    ("📢 패치노트 · 봇공지",
+     "롤·발로란트 패치노트는 30분마다 확인해 각 채널에 자동 게시됩니다.\n"
+     "봇공지의 사용법 안내는 각 봇이 내보낸 명령어 목록으로 1시간마다 자동 갱신됩니다."),
+]
 
 SHARED_DIR = os.environ.get("ARENA_SHARED_DIR", "/home/hxxsx4/shared_data")
 STATE_PATH = os.path.join(SHARED_DIR, "botguide_state.json")
@@ -95,45 +129,90 @@ class BotGuideCog(commands.Cog):
                 continue
         return data
 
+    def _ordered_keys(self, data: dict) -> list[str]:
+        keys = [k for k, _ in BOT_ORDER if k in data]
+        return keys + [k for k in sorted(data) if k not in keys]
+
     def _build_embeds(self) -> list[discord.Embed]:
+        """일반 유저용 — 관리자 전용 명령어는 뺀다."""
         data = self._load_commands()
         head = discord.Embed(
             title="🤖 아레나 봇 사용법",
-            description=("서버에서 쓸 수 있는 모든 명령어입니다.\n"
-                         "명령어가 추가되거나 바뀌면 이 안내도 **자동으로 갱신**됩니다.\n"
-                         "채팅창에 `/` 를 입력하면 목록이 뜹니다."),
+            description=("서버에서 자유롭게 쓸 수 있는 명령어입니다.\n"
+                         "채팅창에 `/` 를 입력하면 목록이 뜹니다.\n"
+                         "명령어가 추가되거나 바뀌면 이 안내도 **자동으로 갱신**됩니다."),
             color=discord.Color.blurple())
 
         total = 0
         embeds = [head]
-        ordered = [k for k, _ in BOT_ORDER if k in data]
-        ordered += [k for k in sorted(data) if k not in ordered]
-
-        for key in ordered:
+        for key in self._ordered_keys(data):
             info = data[key]
-            cmds = [c for c in info.get("commands", []) if not c.get("admin")]
-            admin = [c for c in info.get("commands", []) if c.get("admin")]
-            if not cmds and not admin:
+            cmds = [c for c in info.get("commands", [])
+                    if not c.get("admin") and c["name"] not in ADMIN_ONLY_EXTRA]
+            if not cmds:
                 continue
             icon = dict(BOT_ORDER).get(key, "•")
             e = discord.Embed(title=f"{icon} {info.get('label', key)}",
                               color=discord.Color.blurple())
-            if cmds:
-                lines = [f"`/{c['name']}` — {c['description']}" for c in cmds]
-                e.add_field(name="명령어", value=_chunk(lines), inline=False)
-            if admin:
-                lines = [f"`/{c['name']}`" for c in admin]
-                e.add_field(name="관리자 전용", value=" · ".join(lines)[:1024], inline=False)
-            total += len(cmds) + len(admin)
+            e.add_field(name="명령어",
+                        value=_chunk([f"`/{c['name']}` — {c['description']}" for c in cmds]),
+                        inline=False)
+            total += len(cmds)
             embeds.append(e)
 
         head.set_footer(text=f"총 {total}개 명령어 · 마지막 갱신")
         head.timestamp = discord.utils.utcnow()
         return embeds[:10]      # 한 메시지당 임베드 최대 10개
 
-    async def _upsert_guide(self, channel: discord.abc.Messageable) -> str:
-        embeds = self._build_embeds()
-        msg_id = self.state.get("guide_message_id")
+    def _build_admin_embeds(self) -> list[discord.Embed]:
+        """관리자용 — 필요한 권한/역할까지 함께 표기한다."""
+        data = self._load_commands()
+        head = discord.Embed(
+            title="🛠️ 관리자용 봇 사용법",
+            description=(
+                "관리자·스태프 전용 기능 정리입니다. 명령어마다 **필요한 권한**을 함께 적었습니다.\n\n"
+                "**권한 등급**\n"
+                "• `관리자 권한` — 서버 관리자(Administrator)\n"
+                "• `서버 관리 권한` — 서버 관리하기(Manage Server)\n"
+                "• `💎 내전매니저` — 내전 운영 역할\n"
+                "• `🔪 롤/발로 티어조정관` — 티어 인증·닉네임 등록 담당\n\n"
+                "권한이 없으면 명령어가 아예 목록에 보이지 않거나, 실행 시 거부됩니다."),
+            color=discord.Color.orange())
+
+        embeds = [head]
+        total = 0
+        for key in self._ordered_keys(data):
+            info = data[key]
+            admin = [c for c in info.get("commands", []) if c.get("admin")]
+            # 역할로 막힌 명령어는 admin 플래그가 없어도 여기에 같이 싣는다
+            extra = [c for c in info.get("commands", [])
+                     if not c.get("admin") and c["name"] in ADMIN_ONLY_EXTRA]
+            rows = admin + extra
+            if not rows:
+                continue
+            icon = dict(BOT_ORDER).get(key, "•")
+            e = discord.Embed(title=f"{icon} {info.get('label', key)}",
+                              color=discord.Color.orange())
+            lines = []
+            for c in sorted(rows, key=lambda x: x["name"]):
+                need = ROLE_GATED.get(c["name"]) or c.get("requires") or "관리자 권한"
+                lines.append(f"`/{c['name']}` — {c['description']}\n　└ 필요: **{need}**")
+            e.add_field(name="명령어", value=_chunk(lines), inline=False)
+            total += len(rows)
+            embeds.append(e)
+
+        for title, body in EXTRA_ADMIN_NOTES:
+            embeds.append(discord.Embed(title=title, description=body,
+                                        color=discord.Color.dark_orange()))
+
+        head.set_footer(text=f"관리 기능 {total}개 · 마지막 갱신")
+        head.timestamp = discord.utils.utcnow()
+        return embeds[:10]
+
+    async def _upsert(self, channel: discord.abc.Messageable, embeds: list[discord.Embed],
+                      state_key: str, pin: bool = True) -> str:
+        """같은 메시지를 계속 수정한다. 지워졌으면 새로 올린다."""
+        msg_id = self.state.get(state_key)
         if msg_id:
             try:
                 msg = await channel.fetch_message(int(msg_id))
@@ -142,12 +221,13 @@ class BotGuideCog(commands.Cog):
             except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                 pass    # 메시지가 지워졌으면 새로 올린다
         msg = await channel.send(embeds=embeds)
-        self.state["guide_message_id"] = msg.id
+        self.state[state_key] = msg.id
         self._save_state()
-        try:
-            await msg.pin()
-        except discord.HTTPException:
-            pass
+        if pin:
+            try:
+                await msg.pin()
+            except discord.HTTPException:
+                pass
         return "신규 게시"
 
     # ----- 패치 내역 -----
@@ -199,10 +279,20 @@ class BotGuideCog(commands.Cog):
             n = await self._post_changelog(channel)
             if n:
                 print(f"🔔 [봇공지] 패치 내역 {n}건 게시")
-            how = await self._upsert_guide(channel)
-            print(f"📖 [봇공지] 사용법 {how}")
+            how = await self._upsert(channel, self._build_embeds(), "guide_message_id")
+            print(f"📖 [봇공지] 일반 사용법 {how}")
         except Exception as e:
-            print(f"🚨 [봇공지] 처리 중 오류: {e}")
+            print(f"🚨 [봇공지] 일반 사용법 처리 오류: {e}")
+
+        # 관리자용은 별도 스레드에
+        try:
+            thread = self.bot.get_channel(ADMIN_THREAD) \
+                or await self.bot.fetch_channel(ADMIN_THREAD)
+            how = await self._upsert(thread, self._build_admin_embeds(),
+                                     "admin_message_id", pin=False)
+            print(f"🛠️ [봇공지] 관리자 사용법 {how}")
+        except Exception as e:
+            print(f"🚨 [봇공지] 관리자 사용법 처리 오류: {e}")
 
     @refresh_guide.before_loop
     async def before_refresh(self):
@@ -224,10 +314,18 @@ class BotGuideCog(commands.Cog):
         if channel is None:
             return await interaction.followup.send("❌ 봇공지 채널을 찾을 수 없습니다.", ephemeral=True)
         n = await self._post_changelog(channel)
-        how = await self._upsert_guide(channel)
+        how = await self._upsert(channel, self._build_embeds(), "guide_message_id")
+        try:
+            thread = self.bot.get_channel(ADMIN_THREAD) \
+                or await self.bot.fetch_channel(ADMIN_THREAD)
+            how_admin = await self._upsert(thread, self._build_admin_embeds(),
+                                           "admin_message_id", pin=False)
+        except Exception as e:
+            how_admin = f"실패({e})"
         found = ", ".join(sorted(self._load_commands()))
         await interaction.followup.send(
-            f"✅ 사용법 {how} · 패치 내역 {n}건 게시\n수집된 봇: {found or '없음'}", ephemeral=True)
+            f"✅ 일반 사용법 {how} · 관리자 사용법 {how_admin} · 패치 내역 {n}건\n"
+            f"수집된 봇: {found or '없음'}", ephemeral=True)
 
 
 def _chunk(lines: list[str], limit: int = 1024) -> str:
