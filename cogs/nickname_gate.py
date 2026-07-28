@@ -9,9 +9,10 @@
 import json
 import os
 import re
+from datetime import time as dtime, timedelta, timezone
 
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 from utils.logs import is_target_guild, send_log_embed, ROLE_LOG_CH
 
@@ -19,8 +20,14 @@ ONBOARD_CH_ID = 1526595115232133140      # 닉네임 등록 채널
 OK_ROLE_ID = 1526595902788206653         # 형식 통과 → 정회원 역할
 FAIL_ROLE_ID = 1529585636095426590       # 형식 불일치 → 안내 채널만 보이는 격리 역할
 
+KST = timezone(timedelta(hours=9))
+REMINDER_TIMES = [dtime(hour=10, tzinfo=KST), dtime(hour=14, tzinfo=KST), dtime(hour=18, tzinfo=KST)]
+
 # 년생(뒤 두 자리) + 닉네임(한글 1~8글자). 대괄호는 인식하지 않는다 (예: "03 원샷").
 _ENTRY_RE = re.compile(r"^\s*(\d{2})\s*[\/\-]?\s*([가-힣]{1,8})\s*$")
+
+# 등록 완료 후 실제로 반영되는 닉네임 형식 ("03 원샷"). 기존 멤버 점검용.
+_NICK_OK_RE = re.compile(r"^\d{2} [가-힣]{1,8}$")
 
 # 닉네임에 못 쓰게 막을 단어 (욕설/비하 표현)
 _BANNED_WORDS = {
@@ -56,6 +63,11 @@ class NicknameGateCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.state = self._load_state()
+        self._backfilled = False
+        self.remind_nickname.start()
+
+    def cog_unload(self):
+        self.remind_nickname.cancel()
 
     # ----- 상태(안내 메시지 ID) -----
     def _load_state(self) -> dict:
@@ -84,6 +96,61 @@ class NicknameGateCog(commands.Cog):
             channel = guild.get_channel(ONBOARD_CH_ID)
             if channel:
                 await self._ensure_guide(channel)
+            if not self._backfilled:
+                await self._backfill_existing_members(guild)
+        self._backfilled = True
+
+    # ----- 배포 전부터 있던 기존 멤버 점검 -----
+    async def _backfill_existing_members(self, guild: discord.Guild):
+        ok_role = guild.get_role(OK_ROLE_ID)
+        fail_role = guild.get_role(FAIL_ROLE_ID)
+        if not fail_role:
+            return
+        for member in guild.members:
+            if member.bot or member.id == guild.owner_id:
+                continue
+            if member.guild_permissions.administrator:
+                continue  # 관리자/운영진은 락 걸리면 서버 관리 자체가 막히니 제외
+            if fail_role in member.roles:
+                continue  # 이미 격리 처리됨
+            name = member.nick or member.name
+            if _NICK_OK_RE.match(name):
+                continue  # 이미 형식에 맞음
+
+            try:
+                if ok_role and ok_role in member.roles:
+                    await member.remove_roles(ok_role, reason="닉네임 형식 미준수 (기존 멤버 점검)")
+                await member.add_roles(fail_role, reason="닉네임 형식 미준수 (기존 멤버 점검)")
+            except discord.Forbidden:
+                continue
+
+            await send_log_embed(
+                self.bot, ROLE_LOG_CH,
+                "⚠️ 기존 멤버 닉네임 형식 미준수",
+                f"{member.mention} 님 닉네임(`{name}`)이 형식에 맞지 않아 격리 처리했습니다.",
+                member, discord.Color.orange(), guild=guild)
+
+    # ----- 하루 3번 미등록자 재촉 -----
+    @tasks.loop(time=REMINDER_TIMES)
+    async def remind_nickname(self):
+        for guild in self.bot.guilds:
+            if not is_target_guild(guild):
+                continue
+            role = guild.get_role(FAIL_ROLE_ID)
+            channel = guild.get_channel(ONBOARD_CH_ID)
+            if not role or not channel or not role.members:
+                continue
+            try:
+                await channel.send(
+                    f"⏰ {role.mention} 아직 닉네임을 안 쓰신 분들, 이 채널에 "
+                    "`년생 닉네임` 형식으로 적어주세요! (예: `03 원샷`)",
+                    allowed_mentions=discord.AllowedMentions(roles=True))
+            except discord.Forbidden:
+                pass
+
+    @remind_nickname.before_loop
+    async def _before_remind(self):
+        await self.bot.wait_until_ready()
 
     # ----- 격리 역할: 안내 채널 제외 전 채널 비공개 -----
     async def _sync_role_overwrites(self, guild: discord.Guild):
