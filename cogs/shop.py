@@ -12,8 +12,8 @@ SHOP_LOG_CHANNEL_ID = SHOP_LOG_CH
 SHOP_DATA = {
     "lck": {
         "title": "🏆 LCK 역할 상점",
-        "description": "원하는 LCK 팀 역할을 100,000 Point에 구매하세요!",
-        "price": 100000,
+        "description": "원하는 LCK 팀 역할을 20,000 Point에 구매하세요!",
+        "price": 20000,
         "roles": {
             "T1": 1527350364540506203, "GEN": 1527350507059023902, "HLE": 1527350533084418159,
             "DK": 1527350558606758010, "KT": 1527350585962270880, "NS": 1527350612558348388,
@@ -22,7 +22,7 @@ SHOP_DATA = {
         }
     }
 }
-CUSTOM_ROLE_PRICE = 300000
+CUSTOM_ROLE_PRICE = 50000
 CUSTOM_ROLE_NOTIFY_USER = 1505506970361139210  # 커스텀 역할 구매 알림 받을 유저
 
 # ✨ 상점 로그를 전송하는 비동기 헬퍼 함수
