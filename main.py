@@ -42,6 +42,7 @@ class MainBot(commands.Bot):
             "cogs.onboarding",     # 입장 시 닉네임 등록 안내 DM
             "cogs.nickname_gate",  # 닉네임 등록 채널 [나이] [닉네임] 형식 인식 + 역할 지급
             "cogs.moderation",     # 경고/차감 (로그 → 공유 큐)
+            "cogs.antispam",       # 도배(동일 메시지 반복) 자동 타임아웃
             "cogs.ticket_system",  # 티켓
             "cogs.help_kor",       # 도움말
             "cogs.patchnotes",     # 롤/발로란트 패치노트 자동 게시

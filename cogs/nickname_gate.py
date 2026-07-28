@@ -1,7 +1,8 @@
 """닉네임 등록 채널 — `나이(년생) 닉네임` 형식 자동 인식 + 역할 지급.
 
 지정 채널에 그 형식으로 글을 쓰면 서버 닉네임으로 반영하고 정회원 역할을
-지급한다. 형식을 안 지키면 이 채널 말고는 아무 채널도 못 보는 격리 역할을 준다.
+지급한다. 형식을 안 지키거나 닉네임에 금지어가 있으면 이 채널 말고는
+아무 채널도 못 보는 격리 역할을 준다.
 안내 임베드는 사람들이 올린 메시지들을 지우지 않고(가입 히스토리 확인용) 그
 아래에 새로 보내는 방식으로 항상 채널 최신 메시지 자리를 유지한다.
 """
@@ -20,6 +21,17 @@ FAIL_ROLE_ID = 1529585636095426590       # 형식 불일치 → 안내 채널만
 
 # 년생(뒤 두 자리) + 닉네임(한글 1~8글자). 대괄호는 인식하지 않는다 (예: "03 원샷").
 _ENTRY_RE = re.compile(r"^\s*(\d{2})\s*[\/\-]?\s*([가-힣]{1,8})\s*$")
+
+# 닉네임에 못 쓰게 막을 단어 (욕설/비하 표현)
+_BANNED_WORDS = {
+    "씨발", "시발", "씨팔", "쓰발", "ㅅㅂ", "ㅄ", "병신",
+    "개새끼", "개새기", "좆", "조까", "지랄",
+    "미친놈", "미친년", "걸레", "창녀", "보지", "자지",
+}
+
+
+def _has_banned_word(nick: str) -> bool:
+    return any(w in nick for w in _BANNED_WORDS)
 
 SHARED_DIR = os.environ.get("ARENA_SHARED_DIR", "/home/hxxsx4/shared_data")
 STATE_PATH = os.path.join(SHARED_DIR, "nickname_gate_state.json")
@@ -151,7 +163,9 @@ class NicknameGateCog(commands.Cog):
             return
 
         match = _ENTRY_RE.match(message.content)
-        if match:
+        if match and _has_banned_word(match.group(2)):
+            await self._handle_fail(message.author, "부적절한 닉네임")
+        elif match:
             await self._handle_pass(message.author, match.group(1), match.group(2))
         else:
             await self._handle_fail(message.author)
@@ -181,18 +195,18 @@ class NicknameGateCog(commands.Cog):
             "✅ 닉네임 등록 완료", f"{member.mention} → 닉네임 `{combined}`",
             member, discord.Color.green(), guild=guild)
 
-    async def _handle_fail(self, member: discord.Member):
+    async def _handle_fail(self, member: discord.Member, reason: str = "형식 불일치"):
         guild = member.guild
         role = guild.get_role(FAIL_ROLE_ID)
         if not role or role in member.roles:
             return
         try:
-            await member.add_roles(role, reason="닉네임 등록 형식 불일치")
+            await member.add_roles(role, reason=f"닉네임 등록 {reason}")
         except discord.Forbidden:
             return
         await send_log_embed(
             self.bot, ROLE_LOG_CH,
-            "⚠️ 닉네임 형식 불일치", f"{member.mention} 님이 형식에 맞지 않는 메시지를 보냈습니다.",
+            "⚠️ 닉네임 등록 실패", f"{member.mention} 님이 {reason}(으)로 처리됐습니다.",
             member, discord.Color.orange(), guild=guild)
 
 
