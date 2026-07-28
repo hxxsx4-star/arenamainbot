@@ -49,6 +49,7 @@ class MainBot(commands.Bot):
             "cogs.botguide",       # 봇공지 (사용법 자동갱신 + 봇 패치내역)
             "cogs.voice_rewards",  # 통화방 포인트 지급 (로그는 로그봇이 담당)
             "cogs.server_stats",   # 서버 통계 음성채널 (전체인원/음성인원 자동 갱신)
+            "cogs.role_boards",    # 역할지급 채널 (롤/발로 티어 반응 역할)
         ]
         for cog in cogs_to_load:
             try:
